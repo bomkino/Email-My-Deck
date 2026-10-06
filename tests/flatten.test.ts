@@ -174,6 +174,27 @@ describe('flattening a deck', () => {
     expect(document.getPages().map((page) => page.getRotation().angle)).toEqual([0, 90])
   })
 
+  it('keeps the bar moving while a slow slide is drawn', async () => {
+    const input = await textDeck(2)
+    const events: ProgressEvent[] = []
+    const stub = stubRasterizer(2, boxes)
+    const slow = async (bytes: Uint8Array): Promise<PageRasterizer> => {
+      const rasterizer = await stub(bytes)
+      return { ...rasterizer, page: async (index, rungs) => {
+        if (index === 0) await new Promise((resolve) => setTimeout(resolve, 1300))
+        return rasterizer.page(index, rungs)
+      } }
+    }
+    await flattenDocument(input, 10_000_000, { qpdf: nodeQpdf, rasterizer: slow, onProgress: (event) => events.push(event) })
+    const flatten = events.filter((event) => event.stage === 'flatten')
+    // The second slide finishes at once; the first takes 1.3 s. Meanwhile the bar hears every 400 ms, creeping forward.
+    const waiting = flatten.slice(flatten.findIndex((event) => event.page === 1), flatten.findIndex((event) => event.page === 2))
+    expect(waiting.length).toBeGreaterThanOrEqual(3)
+    expect(waiting.at(-1)!.fraction).toBeGreaterThan(waiting[0].fraction)
+    // Every beat still says which slide it's on, so the words under the bar hold steady.
+    expect(waiting.every((event) => event.page === 1 && event.pages === 2)).toBe(true)
+  })
+
   it('refuses when the renderer sees a different number of pages', async () => {
     const input = await textDeck(3)
     await expect(flattenDocument(input, 10_000_000, { qpdf: nodeQpdf, rasterizer: stubRasterizer(2, boxes) })).rejects.toBeInstanceOf(EngineError)
