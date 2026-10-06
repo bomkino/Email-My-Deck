@@ -46,13 +46,21 @@ scope.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const request = event.data
   // Only the newest job matters; forget older ones.
   for (const jobId of lastFraction.keys()) if (jobId < request.jobId) lastFraction.delete(jobId)
-  const codec = request.type === 'compress' ? createCodec() : null
+  const codec = request.type === 'compress' && request.mode !== 'flatten' ? createCodec() : null
   try {
     const deps = depsFor(request.jobId, codec)
     if (request.type === 'compress') {
       const profile = getTargetProfile(request.profileId, request.customMessageMB ?? request.customMessageMiB)
       const budget = rawBudgetBytes(profile)
       const originalBytes = request.bytes.byteLength
+      if (request.mode === 'flatten') {
+        // PDF.js and the flattener load only when someone asks for them.
+        const [{ flattenDocument }, { pdfjsRasterizer }] = await Promise.all([import('../lib/engine/flatten'), import('../lib/engine/pdfjs')])
+        const result = await flattenDocument(request.bytes, budget, { qpdf: loadQpdf, rasterizer: pdfjsRasterizer, onProgress: deps.onProgress })
+        const outcome = toOutcome(result, originalBytes, profile, budget)
+        scope.postMessage({ type: 'compress-result', jobId: request.jobId, outcome }, [outcome.candidate.bytes.buffer])
+        return
+      }
       const result = await compressDocument(request.bytes, budget, deps, { keepSession: true })
       const outcome = toOutcome(result, originalBytes, profile, budget)
       if (result.kind === 'split-needed' && request.autoSplit && result.session && result.path) {
