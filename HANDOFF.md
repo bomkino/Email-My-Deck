@@ -1,6 +1,6 @@
 # Email My Deck — handoff
 
-This is the short briefing for someone joining the project. The tool is live in beta at `pitch.dog/email-my-deck/`.
+This is the short briefing for someone joining the project. The tool’s home is `pitch.dog/email-my-deck/`, marked beta.
 
 ## The actual goal
 
