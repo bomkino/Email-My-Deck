@@ -16,24 +16,24 @@ export const TARGET_PROFILES: Record<Exclude<TargetProfileId, 'custom'>, TargetP
   'common-25': {
     id: 'common-25',
     label: 'Common 25 MB mail systems',
-    detail: 'Gmail, Outlook, Apple Mail, and most workplaces',
-    maxMessageBytes: 25 * MIB,
+    detail: 'Many 25 MB mailboxes; provider limits vary',
+    maxMessageBytes: 25_000_000,
     bodyReserveBytes: 512 * 1024,
-    recommendedRawBytes: 17.5 * MIB,
+    recommendedRawBytes: 17 * MIB,
   },
   'strict-20': {
     id: 'strict-20',
     label: 'Strict 20 MB message limits',
     detail: 'More headroom for older or stricter systems',
-    maxMessageBytes: 20 * MIB,
+    maxMessageBytes: 20_000_000,
     bodyReserveBytes: 512 * 1024,
-    recommendedRawBytes: 14 * MIB,
+    recommendedRawBytes: 13.5 * MIB,
   },
   'gmail-advanced': {
     id: 'gmail-advanced',
     label: 'Gmail sender → Gmail / Workspace',
     detail: 'Advanced: only when both sides support Gmail limits',
-    maxMessageBytes: 25 * MIB,
+    maxMessageBytes: 25_000_000,
     bodyReserveBytes: 512 * 1024,
     recommendedRawBytes: 23 * MIB,
     conditional: true,
@@ -42,10 +42,11 @@ export const TARGET_PROFILES: Record<Exclude<TargetProfileId, 'custom'>, TargetP
 
 export function getTargetProfile(id: TargetProfileId, customMessageMiB = 25): TargetProfile {
   if (id !== 'custom') return TARGET_PROFILES[id]
-  const maxMessageBytes = Math.max(5, customMessageMiB) * MIB
+  const normalizedMiB = Math.min(70, Math.max(5, Number.isFinite(customMessageMiB) ? customMessageMiB : 25))
+  const maxMessageBytes = normalizedMiB * MIB
   return {
     id,
-    label: `Custom ${Math.max(5, customMessageMiB)} MB message limit`,
+    label: `Custom ${normalizedMiB} MB message limit`,
     detail: 'A measured ceiling you choose',
     maxMessageBytes,
     bodyReserveBytes: 512 * 1024,
@@ -59,5 +60,7 @@ export function estimatedMessageBytes(rawPdfBytes: number, profile: TargetProfil
 }
 
 export function rawBudgetBytes(profile: TargetProfile): number {
-  return Math.max(1, Math.floor((profile.maxMessageBytes - profile.bodyReserveBytes) / 1.3684))
+  // Keep the named presets stable and deliberately conservative. Custom
+  // profiles calculate their own raw budget in getTargetProfile().
+  return Math.max(1, Math.floor(profile.recommendedRawBytes))
 }

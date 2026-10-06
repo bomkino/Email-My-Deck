@@ -5,7 +5,7 @@ import { estimatedMessageBytes, getTargetProfile, rawBudgetBytes } from '../src/
 describe('target profiles', () => {
   it('leaves wire headroom for the common profile', () => {
     const profile = getTargetProfile('common-25')
-    expect(rawBudgetBytes(profile)).toBeGreaterThan(17 * 1024 * 1024)
+    expect(rawBudgetBytes(profile)).toBeGreaterThanOrEqual(17 * 1024 * 1024)
     expect(estimatedMessageBytes(rawBudgetBytes(profile), profile)).toBeLessThanOrEqual(profile.maxMessageBytes)
   })
 

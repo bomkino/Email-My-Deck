@@ -6,7 +6,7 @@
   text-rendering: optimizeLegibility;
   --ink: #101114;
   --muted: #5d6470;
-  --faint: #8d96a3;
+  --faint: #687384;
   --rule: #e4e7eb;
   --soft: #f7f9fb;
   --blue: #1769ff;
@@ -18,6 +18,7 @@
 body { margin: 0; min-width: 320px; min-height: 100vh; background: #fff; }
 button, input { font: inherit; }
 button { color: inherit; }
+button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid rgba(23, 105, 255, .42); outline-offset: 3px; }
 .app-shell { min-height: 100vh; display: flex; flex-direction: column; }
 .topbar { width: min(1120px, calc(100% - 64px)); margin: 0 auto; padding: 28px 0 22px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--rule); }
 .wordmark { border: 0; padding: 0; background: transparent; font-weight: 760; letter-spacing: -.045em; font-size: 1.22rem; cursor: pointer; }
@@ -41,7 +42,9 @@ button { color: inherit; }
 .help { display: inline-flex; margin-left: 4px; color: var(--faint); vertical-align: -2px; }
 .profile-option { position: relative; display: flex; align-items: flex-start; gap: 13px; padding: 12px 10px; cursor: pointer; border-radius: 8px; }
 .profile-option:hover { background: var(--soft); }
-.profile-option input { position: absolute; opacity: 0; pointer-events: none; }
+.profile-option > input { position: absolute; opacity: 0; pointer-events: none; }
+.profile-option > input:focus-visible + .radio { outline: 3px solid rgba(23, 105, 255, .42); outline-offset: 3px; }
+.custom-input input { position: static; opacity: 1; pointer-events: auto; }
 .radio { flex: 0 0 23px; width: 23px; height: 23px; border: 1.7px solid #8993a1; border-radius: 50%; margin-top: 1px; display: grid; place-items: center; }
 .profile-option input:checked + .radio { border-color: var(--blue); box-shadow: inset 0 0 0 5px #fff; background: var(--blue); }
 .profile-copy { display: flex; flex-direction: column; gap: 4px; }
@@ -68,12 +71,14 @@ button { color: inherit; }
 .result-heading { border-bottom: 1px solid var(--rule); padding-bottom: 34px; }
 .result-heading h1 { font-size: clamp(2.45rem, 5vw, 4.1rem); }
 .result-size { margin: 17px 0 0; font-size: 1.3rem; letter-spacing: -.025em; }
+.output-name { margin: 11px 0 0; color: var(--muted); font-size: .9rem; overflow-wrap: anywhere; }
 .result-grid { display: grid; grid-template-columns: 1.1fr .9fr; gap: 42px; padding: 31px 0 28px; border-bottom: 1px solid var(--rule); align-items: center; }
 .fit-status { display: flex; align-items: flex-start; gap: 12px; }
 .check-mark { width: 26px; height: 26px; flex: 0 0 26px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: var(--green); }
 .fit-status div { display: flex; flex-direction: column; gap: 4px; }
 .fit-status strong { font-size: 1.07rem; letter-spacing: -.02em; }
 .fit-status span { color: var(--muted); font-size: .92rem; }
+.conditional-note { display: block; margin-top: 8px; color: #795d16; font-size: .82rem; line-height: 1.4; }
 .actions { display: flex; align-items: center; gap: 22px; margin-top: 28px; }
 .link-button { display: inline-flex; align-items: center; gap: 5px; color: var(--blue-dark); font-weight: 670; }
 .file-comparison { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 13px; padding-left: 30px; border-left: 1px solid var(--rule); }
@@ -97,11 +102,11 @@ button { color: inherit; }
 .part-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
 .part-info strong { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: .97rem; }
 .part-info span { color: var(--muted); font-size: .87rem; }
-.download-part { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; color: var(--blue-dark); cursor: pointer; font-weight: 670; }
+.download-part { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; border: 0; background: none; color: var(--blue-dark); cursor: pointer; font-weight: 670; }
 .email-plan { margin-top: 24px; padding: 20px 22px; border-radius: 8px; background: #f5f7fa; color: #333a44; font-size: .91rem; line-height: 1.45; }
 .plan-title { display: flex; align-items: center; justify-content: space-between; gap: 15px; font-weight: 700; color: var(--ink); }
 .plan-title span { display: inline-flex; align-items: center; gap: 8px; }
-.plan-title button { padding: 7px 11px; border: 1px solid #c6ced9; background: #fff; border-radius: 6px; cursor: pointer; font-weight: 650; font-size: .83rem; }
+.plan-title button { min-height: 44px; padding: 7px 11px; border: 1px solid #c6ced9; background: #fff; border-radius: 6px; cursor: pointer; font-weight: 650; font-size: .83rem; }
 .email-plan p { margin: 13px 0 7px; }
 .plan-line { margin: 5px 0; }
 .error-callout { width: min(760px, 100%); margin: 30px auto 0; display: flex; flex-direction: column; gap: 8px; padding: 18px 20px; border-left: 3px solid #cf4b44; background: #fff8f7; }
@@ -112,9 +117,13 @@ button { color: inherit; }
 .modal { position: relative; width: min(540px, 100%); border-radius: 10px; background: #fff; padding: 35px; box-shadow: 0 24px 70px rgba(17, 20, 25, .18); }
 .modal h2 { margin: 0; max-width: 390px; font-size: 2.25rem; line-height: 1.04; letter-spacing: -.065em; }
 .modal p:not(.eyebrow):not(.modal-note) { color: var(--muted); line-height: 1.56; }
-.modal-close { position: absolute; top: 15px; right: 17px; border: 0; background: none; font-size: 1.7rem; cursor: pointer; color: var(--muted); }
+.modal-close { position: absolute; top: 10px; right: 10px; min-width: 44px; min-height: 44px; border: 0; background: none; font-size: 1.7rem; cursor: pointer; color: var(--muted); }
 .modal-rule { height: 1px; background: var(--rule); margin: 24px 0 18px; }
 .modal-note { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: .88rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; }
+}
 
 @media (max-width: 760px) {
   .topbar, .footer, .main-content { width: min(100% - 40px, 620px); }
@@ -125,6 +134,8 @@ button { color: inherit; }
   .dropzone { min-height: 270px; margin-top: 35px; }
   .profiles { margin-top: 30px; }
   .profile-option { padding-left: 4px; padding-right: 4px; }
+  .profile-option--custom { flex-wrap: wrap; }
+  .profile-option--custom .custom-input { flex-basis: 100%; margin: 8px 0 0 36px; }
   .profile-copy strong { font-size: .95rem; }
   .profile-copy small { font-size: .83rem; line-height: 1.3; }
   .custom-input { margin-left: auto; }

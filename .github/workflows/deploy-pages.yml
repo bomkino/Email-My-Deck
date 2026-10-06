@@ -11,6 +11,8 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'vite.config.ts'
+      - 'scripts/**'
+      - 'tests/**'
       - '.github/workflows/deploy-pages.yml'
 
 concurrency:
@@ -31,6 +33,20 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - name: Generate synthetic corpus
+        run: npm run corpus
+      - name: Run browser privacy smoke test
+        run: |
+          if ! command -v chromium >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y chromium
+          fi
+          npm run dev -- --host 127.0.0.1 > /tmp/email-my-deck-vite.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:5173/ >/dev/null; then break; fi
+            sleep 1
+          done
+          npm run smoke
       - name: Deploy Pages site
         run: npx wrangler pages deploy dist --project-name "$CF_PAGES_PROJECT" --branch main
         env:

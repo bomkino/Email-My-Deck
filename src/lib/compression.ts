@@ -116,8 +116,8 @@ export async function compressPdf(
       elapsedMs: performance.now() - started,
     }
   }
-  if (inspection.encrypted || inspection.hasSignature || inspection.hasForms || inspection.hasAttachments) {
-    throw new Error('This PDF contains features that should not be rewritten automatically. Try splitting it instead.')
+  if (inspection.encrypted || inspection.hasSignature || inspection.hasForms || inspection.hasAttachments || inspection.hasJavaScript) {
+    throw new Error('This PDF contains protected features that should not be rewritten automatically. Export a flattened copy first.')
   }
   if (signal?.aborted) throw new DOMException('Compression cancelled.', 'AbortError')
   try {
@@ -131,7 +131,6 @@ export async function compressPdf(
     console.warn('QPDF candidate unavailable', error)
   }
   if (signal?.aborted) throw new DOMException('Compression cancelled.', 'AbortError')
-  const best = candidates.reduce((winner, candidate) => candidateRank(candidate, targetBytes) > candidateRank(winner, targetBytes) ? candidate : winner)
   const winner = candidates.reduce((current, candidate) => candidateRank(candidate, targetBytes) > candidateRank(current, targetBytes) ? candidate : current)
   onProgress?.({ label: winner.bytes.byteLength <= targetBytes ? 'Ready to verify' : 'Best single-file attempt measured', fraction: 0.94 })
   return {
