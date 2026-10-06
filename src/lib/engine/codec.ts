@@ -204,7 +204,8 @@ export function createBrowserCodec(overrides: EncoderOverrides = {}): ImageCodec
             context.drawImage(bitmap, 0, 0)
             fullPixels = context.getImageData(0, 0, width, height)
           } else {
-            fullPixels = context2d(drawScaled(surfaces, width, height, true), true).getImageData(0, 0, width, height)
+            // Its own surfaces, so each output's canvas resize (what its JPEG must not outweigh) starts from the original, as in the browser codec.
+            fullPixels = context2d(drawScaled([{ image: bitmap, width: bitmap.width, height: bitmap.height, canvas: null }], width, height, true), true).getImageData(0, 0, width, height)
           }
         }
         return fullPixels
