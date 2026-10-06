@@ -1,6 +1,6 @@
 // Sorting for the "Send a link instead" guide. The section is already on the
-// page as plain HTML; this only shows the buttons and re-orders the rows by
-// what the visitor picks. Nothing here is sent anywhere.
+// page as plain HTML; this folds it down to its headline, shows the buttons
+// and re-orders the rows by what the visitor picks. Nothing here is sent anywhere.
 import './guide.css'
 import { guideCopy, NEEDS } from './copy'
 import type { Need } from './types'
@@ -25,18 +25,57 @@ function openRow(row: HTMLElement | null) {
   if (details) details.open = true
 }
 
+const calm = () => typeof matchMedia !== 'function' || matchMedia('(prefers-reduced-motion: reduce)').matches
+
+/**
+ * Folds the guide behind its toggle. Links to #send-a-link (the FAQ, the
+ * can't-fit screen, another page) open it again, and so does find-in-page
+ * where the browser supports hidden="until-found".
+ */
+function setUpFold(section: HTMLElement) {
+  const more = section.querySelector<HTMLElement>('[data-send-more]')
+  const toggle = section.querySelector<HTMLButtonElement>('[data-send-toggle]')
+  const fold = section.querySelector<HTMLButtonElement>('[data-send-fold]')
+  if (!more || !toggle) return () => {}
+
+  const setOpen = (open: boolean) => {
+    if (open) more.removeAttribute('hidden')
+    else more.setAttribute('hidden', 'until-found')
+    toggle.setAttribute('aria-expanded', String(open))
+    section.dataset.open = String(open)
+  }
+  const open = () => { if (toggle.getAttribute('aria-expanded') !== 'true') setOpen(true) }
+
+  toggle.addEventListener('click', () => setOpen(toggle.getAttribute('aria-expanded') !== 'true'))
+  fold?.addEventListener('click', () => {
+    setOpen(false)
+    toggle.focus({ preventScroll: true })
+    section.scrollIntoView?.({ block: 'start', behavior: calm() ? 'auto' : 'smooth' })
+  })
+  more.addEventListener('beforematch', () => setOpen(true))
+  // Runs before the browser follows the link, so the section is already open when it scrolls there.
+  document.addEventListener('click', (event) => {
+    if ((event.target as Element | null)?.closest?.('a[href="#send-a-link"]')) open()
+  })
+
+  setOpen(false)
+  toggle.hidden = false
+  if (fold) fold.hidden = false
+  return open
+}
+
 export function setUpSendGuide(root: ParentNode = document) {
   const section = root.querySelector<HTMLElement>('#send-a-link')
   const filter = section?.querySelector<HTMLElement>('[data-send-filter]')
   const list = section?.querySelector<HTMLOListElement>('.svc-list')
   if (!section || !filter || !list) return
+  const openGuide = setUpFold(section)
   const rows = Array.from(list.children) as HTMLElement[]
   const chips = Array.from(filter.querySelectorAll<HTMLButtonElement>('button[data-need]'))
   const clear = filter.querySelector<HTMLButtonElement>('[data-send-clear]')
   const result = filter.querySelector<HTMLElement>('[data-send-result]')
   const heads = Array.from(section.querySelectorAll<HTMLElement>('.svc-head [data-need]'))
   const selected: Need[] = []
-  const calm = () => typeof matchMedia !== 'function' || matchMedia('(prefers-reduced-motion: reduce)').matches
 
   const update = () => {
     const before = new Map(rows.map((row) => [row, row.getBoundingClientRect().top]))
@@ -79,7 +118,20 @@ export function setUpSendGuide(root: ParentNode = document) {
 
   // A pick's "how to set it up" link opens that row's steps.
   section.querySelectorAll<HTMLAnchorElement>('[data-svc-open]').forEach((link) => link.addEventListener('click', () => openRow(document.getElementById(`svc-${link.dataset.svcOpen}`))))
-  if (location.hash.startsWith('#svc-')) openRow(document.getElementById(location.hash.slice(1)))
+
+  // Arriving at #send-a-link, or at one service's row, opens the guide there.
+  const fromHash = () => {
+    const hash = location.hash
+    if (hash !== '#send-a-link' && !hash.startsWith('#svc-')) return
+    openGuide()
+    if (hash === '#send-a-link') return
+    const row = document.getElementById(hash.slice(1))
+    if (!row || !section.contains(row)) return
+    openRow(row)
+    row.scrollIntoView?.({ block: 'start' })
+  }
+  fromHash()
+  window.addEventListener('hashchange', fromHash)
 
   filter.hidden = false
 }

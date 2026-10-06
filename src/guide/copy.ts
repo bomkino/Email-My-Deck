@@ -22,6 +22,10 @@ export const guideCopy = {
     'Size is rarely the question. Every service here takes a 100 MB deck in its stride. What changes is what happens when they click: a clean preview or a download, a link that lasts or one that’s gone in a week, and who could read your deck on the way.',
     'Already made an email version here? For a link, send your original. There’s no limit to fit, so there’s nothing to give up.',
   ],
+  // The guide starts folded to its headline, so it doesn't push the rest of the page away.
+  more: (count: number) => `Compare ${count} free ways to send it`,
+  moreMeta: (name: string) => `Our pick: ${name}`,
+  fold: 'Fold it back up',
   pickLink: 'How to set it up',
   compareTitle: 'Side by side.',
   compareIntro: 'Free plans only, as each service describes them on its own site. None of them makes the person you’re sending to sign up.',

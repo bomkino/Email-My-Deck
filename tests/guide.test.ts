@@ -84,8 +84,51 @@ describe('send-a-link guide page', () => {
       expect(row.querySelectorAll('.svc-fact')).toHaveLength(NEEDS.length)
       expect(row.querySelectorAll('.svc-steps li')).toHaveLength(service.how.length)
     }
-    // The sorting buttons only appear once the script is running.
+    // The sorting buttons and the fold only appear once the script is running.
     expect(document.querySelector<HTMLElement>('[data-send-filter]')!.hidden).toBe(true)
+    expect(document.querySelector<HTMLElement>('[data-send-toggle]')!.hidden).toBe(true)
+    expect(document.querySelector('[data-send-more]')!.hasAttribute('hidden')).toBe(false)
+  })
+
+  it('starts folded to its headline, and the toggle and the fold button open and close it', () => {
+    setUpSendGuide(document)
+    const more = document.querySelector<HTMLElement>('[data-send-more]')!
+    const toggle = document.querySelector<HTMLButtonElement>('[data-send-toggle]')!
+    expect(toggle.hidden).toBe(false)
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(more.getAttribute('hidden')).toBe('until-found')
+    // The headline and lead stay outside the fold.
+    expect(more.contains(document.getElementById('send-title'))).toBe(false)
+    expect(more.contains(document.querySelector('.svc-list'))).toBe(true)
+
+    toggle.click()
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(more.hasAttribute('hidden')).toBe(false)
+
+    document.querySelector<HTMLButtonElement>('[data-send-fold]')!.click()
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(more.hasAttribute('hidden')).toBe(true)
+  })
+
+  it('opens when someone follows a link to #send-a-link from elsewhere on the page', () => {
+    document.body.insertAdjacentHTML('afterbegin', '<p><a id="faq-link" href="#send-a-link">here’s how</a></p>')
+    setUpSendGuide(document)
+    document.getElementById('faq-link')!.addEventListener('click', (event) => event.preventDefault())
+    document.getElementById('faq-link')!.click()
+    expect(document.querySelector('[data-send-more]')!.hasAttribute('hidden')).toBe(false)
+    expect(document.querySelector('[data-send-toggle]')!.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('opens at a service when the address points at its row', () => {
+    const pick = PICKS.find((item) => item.for === 'private')!
+    location.hash = `#svc-${pick.service}`
+    try {
+      setUpSendGuide(document)
+      expect(document.querySelector('[data-send-more]')!.hasAttribute('hidden')).toBe(false)
+      expect(document.querySelector<HTMLDetailsElement>(`#svc-${pick.service} details`)!.open).toBe(true)
+    } finally {
+      history.replaceState(null, '', location.pathname)
+    }
   })
 
   it('opens outside links in a new tab, so a finished deck on this page is not lost', () => {
