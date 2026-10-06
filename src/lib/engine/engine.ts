@@ -109,6 +109,10 @@ const MIN_PATH_SAVING = 64 * 1024
 /** Room (share of the budget) a fitting result must leave before another full encode at a sharper rung is worth the wait. */
 const SHARPEN_ROOM = 0.05
 const SHARPEN_PASSES = 2
+/** Where the bar may get to before the last checks, when a sharpen pass needs a big share of it. */
+const SHARPEN_BAR_END = 0.96
+/** Longest stretch the drawings' compression runs without letting timers and worker messages through. */
+const ROUNDING_SLICE_MS = 50
 
 function emptyStats(total = 0): ImageStats {
   return { total, resaved: 0, resized: 0, untouched: total }
@@ -261,9 +265,11 @@ export async function compressDocument(input: Uint8Array, budget: number, deps: 
   // Codec speed as measured on this deck (pixels × outputs per ms, per image), so a slow encoder or device still sees the bar creep.
   let pixelsPerMs = PIXELS_PER_MS
   let timedImages = 0
+  // Pixels × (1 + rungs) encoded so far: the work the photos' share of the bar paid for.
+  let encodedWork = 0
 
   /** Decode each image once (several at a time) and encode it at the given rungs. */
-  const encodeImages = async (subset: ImagePlan[], rungs: number[], label?: string) => {
+  const encodeImages = async (subset: ImagePlan[], rungs: number[], label?: string, ofPixels = totalPixels) => {
     if (!subset.length) return
     const stage = subset.some((plan) => rungs.some((rung) => plan.targets[rung]?.resized)) ? 'resize' : 'photos'
     progress.relabel(stage, label ?? STAGE_LABELS[stage])
@@ -276,7 +282,7 @@ export async function compressDocument(input: Uint8Array, budget: number, deps: 
         const expectedMs = Math.max(300, (plan.pixels * (1 + rungs.length)) / pixelsPerMs)
         partial += plan.pixels * 0.9 * (1 - Math.exp(-(time - startedAt) / expectedMs))
       }
-      progress.update((donePixels + partial) / totalPixels)
+      progress.update((donePixels + partial) / ofPixels)
     }, HEARTBEAT_MS)
     try {
       for (const batch of batches(subset, EXTRACT_BATCH_BYTES)) {
@@ -301,7 +307,8 @@ export async function compressDocument(input: Uint8Array, budget: number, deps: 
           for (const rung of rungs) tried.add(rung)
           attempted.set(plan.image.ref, tried)
           donePixels += plan.pixels
-          progress.update(donePixels / totalPixels, { page: plan.firstPage, pages: inspection.pageCount })
+          encodedWork += plan.pixels * (1 + rungs.length)
+          progress.update(donePixels / ofPixels, { page: plan.firstPage, pages: inspection.pageCount })
         }, (plan) => plan.pixels, MAX_PIXELS_IN_FLIGHT)
       }
     } finally {
@@ -417,10 +424,14 @@ export async function compressDocument(input: Uint8Array, budget: number, deps: 
         // rung is untried, encode it for every image and fill again.
         for (let sharper = Math.min(...encoded) - 1, passes = 0; sharper >= 0 && passes < SHARPEN_PASSES; sharper -= 1, passes += 1) {
           if (budget * FILL_TARGET - best.bytes < budget * SHARPEN_ROOM) break
-          // Most of what is left of the bar before the end of checking, so it keeps moving.
-          progress.enter('resize', 'Using the room left for sharper photos', [progress.fraction, progress.fraction + (STAGE_BANDS.verify[1] - progress.fraction) * 0.7])
+          // A share of the bar sized to its work at the pace the photos set, so a slow encoder keeps the bar moving.
+          const sharpening = plans.filter((plan) => !attempted.get(plan.image.ref)?.has(sharper))
+          const work = sharpening.reduce((sum, plan) => sum + plan.pixels * 2, 0)
+          const pace = (STAGE_BANDS.photos[1] - STAGE_BANDS.photos[0]) / Math.max(1, encodedWork)
+          const end = Math.max(progress.fraction, Math.min(SHARPEN_BAR_END, progress.fraction + Math.max((STAGE_BANDS.verify[1] - progress.fraction) * 0.7, work * pace)))
+          progress.enter('resize', 'Using the room left for sharper photos', [progress.fraction, end])
           donePixels = 0
-          await encodeImages(plans.filter((plan) => !attempted.get(plan.image.ref)?.has(sharper)), [sharper], 'Using the room left for sharper photos')
+          await encodeImages(sharpening, [sharper], 'Using the room left for sharper photos', sharpening.reduce((sum, plan) => sum + plan.pixels, 0) || 1)
           encoded.add(sharper)
           progress.enter('verify')
           const refilled = fillBudget(rung, assembled.bytes)
@@ -701,7 +712,13 @@ type RoundedDrawings = { objects: Record<string, StreamUpdate>; streams: number;
  */
 async function roundDrawings(session: QpdfSession, inspection: Inspection, drawings: Drawing[], compress: (data: Uint8Array) => Promise<Uint8Array>, recompress: boolean): Promise<RoundedDrawings> {
   const rounded: RoundedDrawings = { objects: {}, streams: 0, savedBytes: 0 }
+  let slice = Date.now()
   for (const drawing of drawings.splice(0)) {
+    // libdeflate runs on this thread: now and then, let the heartbeat and the image workers' replies through.
+    if (Date.now() - slice > ROUNDING_SLICE_MS) {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      slice = Date.now()
+    }
     const dict = inspection.graph.streamDict(drawing.ref)
     const storedBytes = dict ? inspection.graph.number(dict['/Length']) : null
     if (!dict || !storedBytes) continue
