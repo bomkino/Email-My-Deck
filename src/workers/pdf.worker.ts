@@ -6,7 +6,7 @@ import { createCodecPool, poolSize } from '../lib/engine/pool'
 import type { ProgressEvent } from '../lib/engine/progress'
 import type { WorkerMessage, WorkerRequest } from '../lib/engine/protocol'
 import type { QpdfLoader, QpdfModuleFactory } from '../lib/engine/qpdf'
-import { splitDocument } from '../lib/engine/split'
+import { measureSplitPlan, splitDocument } from '../lib/engine/split'
 import { getTargetProfile, rawBudgetBytes } from '../lib/profiles'
 
 const scope = self as unknown as {
@@ -53,7 +53,7 @@ scope.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       const profile = getTargetProfile(request.profileId, request.customMessageMB ?? request.customMessageMiB)
       const budget = rawBudgetBytes(profile)
       const originalBytes = request.bytes.byteLength
-      const result = await compressDocument(request.bytes, budget, deps, { keepSession: Boolean(request.autoSplit) })
+      const result = await compressDocument(request.bytes, budget, deps, { keepSession: true })
       const outcome = toOutcome(result, originalBytes, profile, budget)
       if (result.kind === 'split-needed' && request.autoSplit && result.session && result.path) {
         const parts = await splitDocument({ session: result.session, path: result.path }, budget, deps, { startFraction: lastFraction.get(request.jobId) })
@@ -61,10 +61,19 @@ scope.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         scope.postMessage({ type: 'split-result', jobId: request.jobId, parts: message, outcome }, [...message.map((part) => part.bytes.buffer), outcome.candidate.bytes.buffer])
         return
       }
+      // The page lets the visitor choose where to split, so it needs to know where the weight is.
+      // Without a plan it still offers a split, just not where.
+      if (result.kind === 'split-needed' && result.session && result.path) {
+        try {
+          outcome.splitPlan = measureSplitPlan(result.session, result.path)
+        } catch (error) {
+          console.warn('Email My Deck could not plan a split', error)
+        }
+      }
       scope.postMessage({ type: 'compress-result', jobId: request.jobId, outcome }, [outcome.candidate.bytes.buffer])
       return
     }
-    const parts = await splitDocument(request.bytes, request.maxPartBytes, deps, { startFraction: lastFraction.get(request.jobId) })
+    const parts = await splitDocument(request.bytes, request.maxPartBytes, deps, { startFraction: lastFraction.get(request.jobId), breakAfter: request.breakAfter })
     const message = parts.map((part) => ({ ...part, pages: part.endPage - part.startPage + 1 }))
     scope.postMessage({ type: 'split-result', jobId: request.jobId, parts: message }, message.map((part) => part.bytes.buffer))
   } catch (error) {

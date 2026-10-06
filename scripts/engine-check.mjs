@@ -69,7 +69,7 @@ for (const testCase of cases) {
           ms,
           progress,
           type: data.type,
-          outcome: outcome && { engine: outcome.candidate.engine, bytes: outcome.candidate.bytes.byteLength, fits: outcome.fits, targetBytes: outcome.targetBytes, pages: outcome.inspection.pages, verified: outcome.verified, receipt: outcome.receipt },
+          outcome: outcome && { engine: outcome.candidate.engine, bytes: outcome.candidate.bytes.byteLength, fits: outcome.fits, targetBytes: outcome.targetBytes, pages: outcome.inspection.pages, verified: outcome.verified, receipt: outcome.receipt, planPages: outcome.splitPlan?.pageBytes?.length },
           parts: data.parts?.map((part) => ({ bytes: part.bytes.byteLength, startPage: part.startPage, endPage: part.endPage, pages: part.pages })),
         })
       }
@@ -104,6 +104,7 @@ for (const testCase of cases) {
       if (!requests.some((url) => /image\.worker-.*\.js$/.test(url))) fail('the image worker pool was not used')
     }
     if (kind === 'needs-split' && (run.type !== 'compress-result' || outcome?.fits !== false)) fail('expected a compress result that still needs a split')
+    if (kind === 'needs-split' && outcome?.planPages !== outcome?.pages) fail('expected a split plan with a weight for every page')
     if (kind === 'split') {
       const parts = run.parts ?? []
       if (run.type !== 'split-result' || parts.length < 2) fail(`expected several parts, got ${run.type} with ${parts.length}`)

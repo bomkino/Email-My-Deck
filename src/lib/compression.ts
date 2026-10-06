@@ -1,4 +1,5 @@
 import type { Attempt, EngineResult, ImageStats } from './engine/engine'
+import type { SplitPlan } from './engine/split'
 import type { PdfInspection } from './pdf'
 import { estimatedMessageBytes, type TargetProfile } from './profiles'
 
@@ -37,6 +38,8 @@ export type CompressionOutcome = {
   inspection: PdfInspection
   receipt: CompressionReceipt
   splitReason?: 'quality-floor' | 'browser-cannot-resize'
+  /** When it doesn't fit: estimated part weights of `candidate`, for choosing where to split it. */
+  splitPlan?: SplitPlan
   elapsedMs: number
 }
 

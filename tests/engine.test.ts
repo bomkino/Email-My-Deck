@@ -9,7 +9,8 @@ import { EngineError } from '../src/lib/engine/errors'
 import { encodeGrayJpeg } from '../src/lib/engine/grayjpeg'
 import { readJpegInfo } from '../src/lib/engine/jpeg'
 import type { ProgressEvent } from '../src/lib/engine/progress'
-import { splitDocument } from '../src/lib/engine/split'
+import { measureSplitPlan, splitDocument } from '../src/lib/engine/split'
+import { QpdfSession } from '../src/lib/engine/qpdf'
 import { getTargetProfile, rawBudgetBytes } from '../src/lib/profiles'
 import { addJavaScript, addSignatureField, nodeCodec, nodeQpdf, pageCount, photoDeck, photoJpeg, qpdfTransform, textDeck } from './helpers/engine'
 
@@ -118,6 +119,38 @@ describe('compressDocument', () => {
   it('reports a page that cannot fit on its own', async () => {
     const input = await photoDeck({ pages: 2 })
     expect(await codeOf(splitDocument(input, 5_000, { qpdf: nodeQpdf }))).toBe('page-too-large')
+  })
+
+  it('splits exactly where the visitor asked, and says which part is over', async () => {
+    const input = await photoDeck({ pages: 5, image: [800, 450] })
+    const budget = Math.ceil(input.byteLength / 3)
+    const parts = await splitDocument(input, budget, { qpdf: nodeQpdf }, { breakAfter: [1, 4] })
+    expect(parts.map((part) => [part.startPage, part.endPage])).toEqual([[1, 1], [2, 4], [5, 5]])
+    expect(parts.map((part) => part.fits)).toEqual([true, false, true])
+    expect(parts[1].bytes.byteLength).toBeGreaterThan(budget)
+    for (const part of parts) expect(await pageCount(part.bytes)).toBe(part.endPage - part.startPage + 1)
+  })
+
+  it('refuses split points that are out of order or off the end', async () => {
+    const input = await photoDeck({ pages: 3, image: [400, 225] })
+    for (const breakAfter of [[2, 1], [3], [0], [1.5], []]) {
+      expect(await codeOf(splitDocument(input, input.byteLength, { qpdf: nodeQpdf }, { breakAfter }))).toBe('engine')
+    }
+  })
+
+  it('estimates parts closely before splitting, even when pages share one resource dictionary', async () => {
+    const input = await photoDeck({ pages: 6, image: [1200, 675], sharedResources: true })
+    const session = await QpdfSession.create(nodeQpdf)
+    session.writeFile('/work/plan-source.pdf', input.slice(), true)
+    const plan = measureSplitPlan(session, '/work/plan-source.pdf')
+    expect(plan.pageBytes).toHaveLength(6)
+    const estimate = (start: number, end: number) => plan.sharedBytes + plan.pageBytes.slice(start - 1, end).reduce((sum, bytes) => sum + bytes, 0)
+    const parts = await splitDocument(input, input.byteLength, { qpdf: nodeQpdf }, { breakAfter: [2] })
+    for (const part of parts) {
+      const ratio = estimate(part.startPage, part.endPage) / part.bytes.byteLength
+      expect(ratio).toBeGreaterThan(0.9)
+      expect(ratio).toBeLessThan(1.15)
+    }
   })
 
   it('splits bytes sent by an older page without an automatic split', async () => {

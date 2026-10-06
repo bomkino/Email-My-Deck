@@ -9,6 +9,14 @@ import type { TargetProfileId } from '../profiles'
 import type { EngineErrorCode, ProtectedReason } from './errors'
 import type { EngineStage } from './progress'
 
+/** What this engine build can do beyond compressing and splitting. The page offers only what's here. */
+export const ENGINE_FEATURES = {
+  /** `split` honours `breakAfter`, and a result that doesn't fit carries `splitPlan`. */
+  splitAt: true,
+  /** `compress` with `mode: 'flatten'` turns pages into pictures. */
+  flatten: false,
+} as const
+
 export type CompressRequest = {
   type: 'compress'
   jobId: number
@@ -18,11 +26,18 @@ export type CompressRequest = {
   customMessageMB?: number
   /** Older name for the same decimal-MB value. */
   customMessageMiB?: number
-  /** Split in the same job when nothing fits, and answer with `split-result` only. */
+  /** Split in the same job when nothing fits, and answer with `split-result` only. Without it, a result that doesn't fit carries `splitPlan`. */
   autoSplit?: boolean
 }
 
-export type SplitRequest = { type: 'split'; jobId: number; bytes: Uint8Array; maxPartBytes: number }
+export type SplitRequest = {
+  type: 'split'
+  jobId: number
+  bytes: Uint8Array
+  maxPartBytes: number
+  /** Split after these pages (1-based, ascending), exactly. Without it, the fewest parts that fit. */
+  breakAfter?: number[]
+}
 
 export type WorkerRequest = CompressRequest | SplitRequest
 
@@ -40,7 +55,8 @@ export type ProgressMessage = {
 
 export type CompressResultMessage = { type: 'compress-result'; jobId: number; outcome: CompressionOutcome }
 
-export type SplitResultPart = { bytes: Uint8Array; pages: number; startPage: number; endPage: number }
+/** `fits` is false for a part placed with `breakAfter` that measured over `maxPartBytes`. */
+export type SplitResultPart = { bytes: Uint8Array; pages: number; startPage: number; endPage: number; fits?: boolean }
 
 export type SplitResultMessage = {
   type: 'split-result'
