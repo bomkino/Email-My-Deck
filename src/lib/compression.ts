@@ -1,144 +1,86 @@
+import type { Attempt, EngineResult, ImageStats } from './engine/engine'
 import type { PdfInspection } from './pdf'
-import type { TargetProfile } from './profiles'
-import { estimatedMessageBytes, rawBudgetBytes } from './profiles'
-
-export type CompressionProgress = {
-  label: string
-  fraction: number
-}
+import { estimatedMessageBytes, type TargetProfile } from './profiles'
 
 export type CompressionCandidate = {
   bytes: Uint8Array
-  engine: 'original' | 'qpdf' | 'ghostscript'
+  engine: 'original' | 'qpdf' | 'images'
   quality: 'preserved' | 'optimized' | 'strong'
   notes: string[]
+}
+
+/** Facts for a plain-words receipt. Every number is measured on this device. */
+export type CompressionReceipt = {
+  originalBytes: number
+  outputBytes: number
+  pages: number
+  images: ImageStats
+  /** Long edge, in pixels, that a full-page image keeps (only when images were rewritten). */
+  longEdgePx?: number
+  /** JPEG quality 1–100 used for re-saved photos. */
+  jpegQuality?: number
+  /** True when no image or visible content changed. */
+  lossless: boolean
+  /** What was verified on the result: 'unchanged' | 'page-count' | 'page-size' | 'structure'. */
+  checks: string[]
+  attempts: Attempt[]
 }
 
 export type CompressionOutcome = {
   candidate: CompressionCandidate
   targetBytes: number
   estimatedMessageBytes: number
+  /** True only when the checks in `receipt.checks` passed on `candidate.bytes`. */
   verified: boolean
+  /** True when `candidate` is within `targetBytes`. When false, `candidate` is the version to split. */
+  fits: boolean
   inspection: PdfInspection
+  receipt: CompressionReceipt
+  splitReason?: 'quality-floor' | 'browser-cannot-resize'
   elapsedMs: number
 }
 
-type QpdfModule = {
-  FS: { writeFile(path: string, data: Uint8Array): void; readFile(path: string): Uint8Array; unlink(path: string): void }
-  callMain(args: string[]): number
+function plural(count: number, word: string): string {
+  return `${count} ${word}${count === 1 ? '' : 's'}`
 }
 
-async function runQpdf(input: Uint8Array, optimizeImages: boolean, onProgress?: (progress: CompressionProgress) => void): Promise<Uint8Array> {
-  onProgress?.({ label: optimizeImages ? 'Recompressing eligible images' : 'Tidying PDF structure', fraction: optimizeImages ? 0.48 : 0.28 })
-  const { default: createModule } = await import('@neslinesli93/qpdf-wasm')
-  const wasmUrl = (await import('@neslinesli93/qpdf-wasm/dist/qpdf.wasm?url')).default
-  const qpdf = (await createModule({
-    locateFile: () => wasmUrl,
-  })) as unknown as QpdfModule
-  const inputPath = '/email-my-deck-input.pdf'
-  const outputPath = '/email-my-deck-output.pdf'
-  qpdf.FS.writeFile(inputPath, input)
-  const args = [
-    '--deterministic-id',
-    '--object-streams=generate',
-    '--stream-data=compress',
-    '--recompress-flate',
-  ]
-  if (optimizeImages) args.push('--optimize-images', '--jpeg-quality=82')
-  args.push(inputPath, outputPath)
-  const result = qpdf.callMain(args)
-  if (result !== 0) throw new Error('The local PDF engine could not create a valid candidate.')
-  const output = qpdf.FS.readFile(outputPath)
-  qpdf.FS.unlink(inputPath)
-  qpdf.FS.unlink(outputPath)
-  onProgress?.({ label: optimizeImages ? 'Checking image candidate' : 'Checking structural candidate', fraction: optimizeImages ? 0.7 : 0.42 })
-  return new Uint8Array(output)
+export function describeResult(result: Pick<EngineResult, 'kind' | 'images' | 'rung'>): string[] {
+  if (result.kind === 'original') return ['Your original already fits. Nothing was changed.']
+  if (result.kind === 'lossless' || (result.kind === 'split-needed' && !result.rung)) {
+    return ['Tidied the file’s internal structure only. Every slide and image is unchanged.']
+  }
+  const notes: string[] = []
+  const { resized, resaved, untouched } = result.images
+  if (resized && result.rung) notes.push(`Resized ${plural(resized, 'image')} for a ${result.rung.longEdgePx}-pixel-wide slide.`)
+  if (resaved) notes.push(`Re-saved ${plural(resaved, 'photo')} a little lighter.`)
+  if (untouched) notes.push(`${plural(untouched, 'image')} left exactly as they were.`)
+  notes.push('Text, links and slide order are untouched.')
+  return notes
 }
 
-export async function runGhostscript(input: Uint8Array, onProgress?: (progress: CompressionProgress) => void): Promise<Uint8Array> {
-  onProgress?.({ label: 'Opening strong compression engine', fraction: 0.58 })
-  const { load } = await import('@wasm-zoo/ghostscript')
-  const gs = await load()
-  try {
-    const result = await gs.exec([
-      '-dSAFER', '-dBATCH', '-dNOPAUSE', '-dDetectDuplicateImages',
-      '-sDEVICE=pdfwrite', '-dCompatibilityLevel=1.7',
-      '-dPDFSETTINGS=/prepress', '-dDownsampleColorImages=true',
-      '-dColorImageDownsampleType=/Bicubic', '-dColorImageResolution=150',
-      '-dDownsampleGrayImages=true', '-dGrayImageDownsampleType=/Bicubic',
-      '-dGrayImageResolution=150', '-dDownsampleMonoImages=true',
-      '-dMonoImageResolution=300', '-dPreserveAnnots=true',
-      '-sOutputFile=/email-my-deck-strong.pdf', '/email-my-deck-input.pdf',
-    ], {
-      files: [{ name: '/email-my-deck-input.pdf', data: input }],
-      dirs: ['/out'],
-      outputs: ['/email-my-deck-strong.pdf'],
-      timeoutMs: 90000,
-    })
-    onProgress?.({ label: 'Checking strong candidate', fraction: 0.82 })
-    const output = result.files.find((file: { name: string }) => file.name === '/email-my-deck-strong.pdf')
-    if (!output) throw new Error('The strong PDF engine returned no output.')
-    return new Uint8Array(output.data)
-  } finally {
-    gs.dispose()
-  }
-}
-
-function candidateRank(candidate: CompressionCandidate, targetBytes: number): number {
-  if (candidate.bytes.byteLength > targetBytes) return -Infinity
-  const qualityRank = candidate.quality === 'preserved' ? 3 : candidate.quality === 'optimized' ? 2 : 1
-  return qualityRank * 1_000_000_000 + candidate.bytes.byteLength
-}
-
-export async function compressPdf(
-  original: Uint8Array,
-  profile: TargetProfile,
-  inspection: PdfInspection,
-  onProgress?: (progress: CompressionProgress) => void,
-  signal?: AbortSignal,
-): Promise<CompressionOutcome> {
-  const started = performance.now()
-  const targetBytes = rawBudgetBytes(profile)
-  const candidates: CompressionCandidate[] = [{
-    bytes: original,
-    engine: 'original',
-    quality: 'preserved',
-    notes: ['Original bytes preserved.'],
-  }]
-  if (original.byteLength <= targetBytes) {
-    onProgress?.({ label: 'Original already fits', fraction: 1 })
-    return {
-      candidate: candidates[0],
-      targetBytes,
-      estimatedMessageBytes: estimatedMessageBytes(original.byteLength, profile),
-      verified: true,
-      inspection,
-      elapsedMs: performance.now() - started,
-    }
-  }
-  if (inspection.encrypted || inspection.hasSignature || inspection.hasForms || inspection.hasAttachments || inspection.hasJavaScript) {
-    throw new Error('This PDF contains protected features that should not be rewritten automatically. Export a flattened copy first.')
-  }
-  if (signal?.aborted) throw new DOMException('Compression cancelled.', 'AbortError')
-  try {
-    const structural = await runQpdf(original, false, onProgress)
-    if (structural.byteLength < original.byteLength) candidates.push({ bytes: structural, engine: 'qpdf', quality: 'preserved', notes: ['PDF structure optimized.'] })
-    if (structural.byteLength > targetBytes) {
-      const images = await runQpdf(original, true, onProgress)
-      if (images.byteLength < original.byteLength) candidates.push({ bytes: images, engine: 'qpdf', quality: 'optimized', notes: ['Eligible JPEG images recompressed.'] })
-    }
-  } catch (error) {
-    console.warn('QPDF candidate unavailable', error)
-  }
-  if (signal?.aborted) throw new DOMException('Compression cancelled.', 'AbortError')
-  const winner = candidates.reduce((current, candidate) => candidateRank(candidate, targetBytes) > candidateRank(current, targetBytes) ? candidate : current)
-  onProgress?.({ label: winner.bytes.byteLength <= targetBytes ? 'Ready to verify' : 'Best single-file attempt measured', fraction: 0.94 })
+export function toOutcome(result: EngineResult, originalBytes: number, profile: TargetProfile, targetBytes: number): CompressionOutcome {
+  const rewroteImages = result.images.resized + result.images.resaved > 0
+  const engine: CompressionCandidate['engine'] = result.kind === 'original' ? 'original' : rewroteImages ? 'images' : 'qpdf'
+  const quality: CompressionCandidate['quality'] = !rewroteImages ? 'preserved' : result.images.resized ? 'strong' : 'optimized'
   return {
-    candidate: winner,
+    candidate: { bytes: result.bytes, engine, quality, notes: describeResult(result) },
     targetBytes,
-    estimatedMessageBytes: estimatedMessageBytes(winner.bytes.byteLength, profile),
-    verified: winner.engine === 'original' || winner.bytes.byteLength > 0,
-    inspection,
-    elapsedMs: performance.now() - started,
+    estimatedMessageBytes: estimatedMessageBytes(result.bytes.byteLength, profile),
+    verified: result.checks.length > 0,
+    fits: result.kind !== 'split-needed' && result.bytes.byteLength <= targetBytes,
+    inspection: { pages: result.pageCount, pageSizes: result.pageSizes, images: result.images.total },
+    receipt: {
+      originalBytes,
+      outputBytes: result.bytes.byteLength,
+      pages: result.pageCount,
+      images: result.images,
+      longEdgePx: rewroteImages ? result.rung?.longEdgePx : undefined,
+      jpegQuality: rewroteImages && result.rung ? Math.round(result.rung.jpegQuality * 100) : undefined,
+      lossless: !rewroteImages,
+      checks: result.checks,
+      attempts: result.attempts,
+    },
+    splitReason: result.splitReason,
+    elapsedMs: result.elapsedMs,
   }
 }

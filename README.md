@@ -50,11 +50,14 @@ npm run smoke
 ## Architecture
 
 - React + Vite UI with responsive desktop/mobile states.
-- A dedicated worker owns parsing, candidate generation, split generation, and output transfer.
-- QPDF WASM performs the first structural and eligible-image passes.
-- Ghostscript WASM is lazy-loaded only when stronger downsampling is needed.
-- Candidates always start from the untouched original. The winner is the highest-fidelity eligible candidate under the raw PDF budget; a small file is never padded toward the ceiling.
-- `pdf-lib` handles page-balanced split recovery and verification.
+- A dedicated worker (`src/workers/pdf.worker.ts`) runs the engine in `src/lib/engine/`. The page and the worker speak the message types in `src/lib/engine/protocol.ts`.
+- QPDF WASM reads the PDF's structure as JSON (pages, images, forms, encryption), pulls out image data, swaps rewritten images back in by object number, and cuts page ranges for splits. Images are handled once each, even when every page shares one resource dictionary.
+- The browser's own codecs resize and re-save images (`createImageBitmap`, `OffscreenCanvas`, `CompressionStream`), spread over a few nested image workers (`src/workers/image.worker.ts`).
+- Order: the untouched original if it fits; a lossless tidy when it could plausibly fit; then a quality ladder measured in pixels across the slide (3840, 2880, 2400, then a 1920-pixel floor). Each rung starts from the original, and the sharpest one that measures under the budget wins. A small file is never padded toward the ceiling.
+- Below the floor the deck is split into measured parts: the fewest emails, at the sharpest rung that still needs no more of them.
+- Every result is re-read before it is offered: same page count, same page sizes, sound structure.
+- The worker reports progress as `{ stage, fraction, label, page?, pages? }`; `fraction` never goes backwards. Errors carry a `code` (`not-pdf`, `damaged`, `password`, `restricted`, `protected` with a `reason`, `too-big`, `page-too-large`, `engine`).
+- `node scripts/engine-check.mjs` (after `npm run build` and `npm run corpus`) runs the built engine in Chromium on the synthetic corpus, served with the site's own `_headers` by `scripts/serve-dist.mjs`, and checks each deck's result, the progress events and that nothing leaves the origin. CI runs it and `npm run smoke` against the built site on every pull request.
 
 The compression engine never receives user-controlled command-line arguments. A 120-second browser-job watchdog prevents a pathological file from leaving the interface spinning forever. Large engine assets are bundled and self-hostable. The Ghostscript WebAssembly distribution is AGPL-3.0-or-later; see [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) and [PROVENANCE.md](PROVENANCE.md) before redistribution.
 
