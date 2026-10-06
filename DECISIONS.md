@@ -8,10 +8,13 @@ These are the decisions behind the current implementation. They are here to prev
 | Product scope | One narrow job: make a deck email-ready | Fewer controls make the tool understandable to non-technical senders. |
 | Mailbox target | Profiles plus custom limit | Provider and gateway limits vary. A single universal number creates false confidence. |
 | Gmail option | Conditional Gmail-to-Gmail/Workspace profile | It can use a larger attachment budget, but recipients and gateways may still reject it. |
-| Compression order | Original → QPDF structure/image pass → Ghostscript only if needed | Preserve the highest-fidelity candidate that fits; avoid needless lossy work. |
+| Compression order | Original → lossless QPDF tidy → image ladder (3840, 2880, 2400, 1920 px across the slide) | Preserve the highest-fidelity candidate that fits; avoid needless lossy work. Each rung starts from the original, so nothing is compressed twice. |
+| Image sizing (2026-10-06) | Pixels across the slide, measured from where each image is actually drawn | Deck exporters disagree about page size (Keynote 1920 pt, PowerPoint 960 pt, A4 595 pt), so DPI targets either wreck or ignore images. Images drawn somewhere we cannot follow keep their full size. |
+| Engine (2026-10-06) | QPDF WASM plus the browser's image codecs; no Ghostscript | Ghostscript could not start inside the worker, was tuned for print, re-rendered every page, and cost a 17 MB download. QPDF changes only the images and leaves text, fonts and links byte for byte. |
 | Quality floor | Split when a single readable file cannot fit | A tiny but unreadable deck is worse than two honest attachments. |
+| Split policy (2026-10-06) | Fewest emails first, then the sharpest rung that needs no more of them | Each extra email is a real cost to the sender; the floor (1920 px across) still reads well on a laptop screen. |
 | Protected PDFs | Refuse rewriting and ask for a flattened copy | Forms, signatures, attachments, scripts, and passwords can carry semantics that a compressor cannot promise to preserve. |
-| Size estimate | Reserve space for MIME/base64 overhead and body text | The attachment bytes are not the same as the transmitted message bytes. |
+| Size estimate | Reserve space for MIME/base64 overhead and body text; every limit in decimal MB | The attachment bytes are not the same as the transmitted message bytes. Mail providers count 25 MB as 25,000,000 bytes, so custom limits do too. |
 | Output names | `-email-version` and numbered `-part-XX-of-YY` suffixes | Users should know what a file is for before attaching it. |
 | Hosting | Static Cloudflare Pages build | No upload API, storage, database, or paid runtime is needed. |
 | License | AGPL-3.0-or-later | Improvements to a hosted version remain available to the community. |
