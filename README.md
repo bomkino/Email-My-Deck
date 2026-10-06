@@ -10,12 +10,12 @@ This repository is the complete shareable implementation and handoff for the cur
 
 1. Reads and inspects the PDF in a dedicated browser worker.
 2. Tries the least destructive local optimization first.
-3. Uses stronger image downsampling only when it is needed.
+3. Re-saves or resizes photos only as far as it has to, along a ladder measured in pixels across the slide.
 4. Verifies that the page count and page geometry survived.
 5. Offers a filename ending in `-email-version.pdf` when one file fits.
 6. If the quality floor cannot be met, creates measured `-email-version-part-01-of-03.pdf` files and separates each email subject from its attachment name.
 
-The default **Common 25 MB mail systems** profile uses a conservative raw-PDF budget so base64/MIME overhead and message text have room. The strict profile is safer for older systems. The Gmail profile is deliberately labelled conditional because a large Gmail attachment can still be rejected by a recipient gateway.
+The default **Most mailboxes** setting uses a conservative raw-PDF budget (about 17.8 MB) so base64/MIME overhead and message text have room. **Strict or work mailboxes** is safer for 20 MB limits. **Gmail to Gmail only** is deliberately conditional, because a large Gmail attachment can still be rejected by a recipient's mail server.
 
 ## Run locally
 
@@ -25,23 +25,15 @@ npm run corpus   # optional: create synthetic test decks in corpus/
 npm run dev
 ```
 
-The production checks are:
-
-```bash
-npm test
-npm run build
-npm run smoke   # run while Vite is serving on port 5173
-```
-
-For a clean handoff, use this sequence:
+The checks, as CI runs them on every pull request:
 
 ```bash
 npm ci
 npm run corpus
 npm test
 npm run build
-npm run dev -- --host 127.0.0.1
-# in another terminal:
+node scripts/engine-check.mjs
+node scripts/serve-dist.mjs dist 5173 &   # serves dist/ with public/_headers
 npm run smoke
 ```
 
@@ -55,7 +47,11 @@ The live home for the tool is `pitch.dog/email-my-deck/`. `index.html` is the wh
 npm run build:pitchdog   # builds dist-pitchdog/ with base /email-my-deck/
 ```
 
-Copy `dist-pitchdog/` to `apps/main-site/email-my-deck/` in `bomkino/pitchdog-cloudflare-sites`. `BUILD.json` records the commit it came from, and `licenses/` carries the AGPL text, third-party notices and provenance. Commit here first so `BUILD.json` names a clean commit.
+To ship a change to pitch.dog:
+
+1. Merge it here, then run `npm run build:pitchdog` on a clean checkout. `BUILD.json` records the commit, and `licenses/` carries the AGPL text, third-party notices and provenance.
+2. In `bomkino/pitchdog-cloudflare-sites`, replace `apps/main-site/email-my-deck/` with `dist-pitchdog/`, run `node scripts/add-free-stuff-nav.mjs`, and merge.
+3. Run that repository's "Deploy Email My Deck" workflow. It serves the page from its own Worker route, so the rest of pitch.dog is untouched.
 
 ## Architecture
 
@@ -71,15 +67,9 @@ Copy `dist-pitchdog/` to `apps/main-site/email-my-deck/` in `bomkino/pitchdog-cl
 
 The compression engine never receives user-controlled command-line arguments. A browser-job watchdog stops any job that goes 60 seconds without a progress event, so a pathological file never leaves the interface spinning forever while a big deck that keeps moving is never cut off. Large engine assets are bundled and self-hostable; see [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) and [PROVENANCE.md](PROVENANCE.md) before redistribution.
 
-## Cloudflare Pages
+## Standalone deploy (optional)
 
-The app is a static Vite build. Deploy `dist/` from `main` with:
-
-- build command: `npm run build`
-- output directory: `dist`
-- Node version: 20 or newer
-
-The checked-in `public/_headers` file supplies a restrictive CSP and security headers. Use a dedicated Pages project or a same-origin route in pitch.dog; do not add a Worker upload route. See [CLOUDFLARE.md](CLOUDFLARE.md) for the integration constraint around root paths and iframe embedding.
+The plain build in `dist/` can also run on its own Cloudflare Pages project. `.github/workflows/deploy-pages.yml` does that, by hand only, once its secrets are set. The checked-in `public/_headers` supplies a restrictive CSP and security headers. Never add an upload route. See [CLOUDFLARE.md](CLOUDFLARE.md).
 
 ## Privacy boundary
 

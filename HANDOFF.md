@@ -63,7 +63,7 @@ Visual checks were run at desktop, 390 px mobile, and 320 px mobile widths acros
 | `README.md` | Setup, architecture, limits, and deployment summary |
 | `DECISIONS.md` | Product and engineering tradeoffs, including rejected approaches |
 | `PRIVACY.md` | Exact browser privacy boundary and its limits |
-| `CLOUDFLARE.md` | Static deployment handoff and pitch.dog integration constraints |
+| `CLOUDFLARE.md` | How the pitch.dog page and the optional standalone build are deployed |
 | `PROVENANCE.md` | Engine versions, build hashes, and source obligations |
 | `THIRD-PARTY-LICENSES.md` | QPDF and wrapper license notes |
 | `scripts/generate-corpus.mjs` | Synthetic test-deck generation |
@@ -73,14 +73,15 @@ Visual checks were run at desktop, 390 px mobile, and 320 px mobile widths acros
 | `src/lib/engine/protocol.ts` | Messages between the page and the worker |
 | `src/workers/pdf.worker.ts` | Worker boundary and job flow |
 
-## Before calling it live
+## Where it lives
 
-1. Configure `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, and the optional `CF_PAGES_PROJECT` repository variable.
-2. Decide whether pitch.dog links to a dedicated Pages origin or serves this build through a same-origin route. Do not iframe the current standalone build.
-3. Re-run the workflow so the synthetic corpus, tests, build, and browser smoke gate run in CI.
-4. Test the final public URL on a real mobile device with a representative deck.
-5. Keep the AGPL source, provenance, SBOM, and third-party notices available with the deployed build.
+The tool's home is `pitch.dog/email-my-deck/`, a normal pitch.dog page marked beta. It ships from `bomkino/pitchdog-cloudflare-sites` on its own Worker route; see [CLOUDFLARE.md](CLOUDFLARE.md). The page counts visits with pitch.dog's Google Analytics tag, and never sends the file, its name or its contents.
+
+Still open:
+
+1. Test the live URL on a real phone and in Safari with a representative deck.
+2. Keep the AGPL source, provenance, SBOM and third-party notices available with every deployed build. `build:pitchdog` copies them into `licenses/`.
 
 ## Good next improvements
 
-The highest-value follow-ups are a richer corpus of real-world deck structures, a richer page-preview comparison before download, more compression candidates with bounded runtime, and a deliberate base-path build for a pitch.dog subroute. Each should preserve the browser-only privacy boundary and the “split instead of destroying readability” rule.
+The highest-value follow-ups are a richer corpus of real-world deck structures and a page-preview comparison before download. Each should preserve the browser-only privacy boundary and the “split instead of destroying readability” rule.

@@ -1,19 +1,10 @@
 name: Deploy to Cloudflare Pages
 
+# The tool's home is pitch.dog/email-my-deck/, which ships from
+# bomkino/pitchdog-cloudflare-sites. This standalone deploy is optional, so it
+# only runs by hand, once the Cloudflare secrets below are set.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'src/**'
-      - 'public/**'
-      - 'index.html'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'vite.config.ts'
-      - 'scripts/**'
-      - 'tests/**'
-      - '.github/workflows/deploy-pages.yml'
 
 concurrency:
   group: cloudflare-pages-production
@@ -28,20 +19,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       - run: npm test
       - run: npm run build
       - name: Generate synthetic corpus
         run: npm run corpus
-      - name: Run browser privacy smoke test
+      - name: Page smoke test on the built site
         run: |
-          if ! command -v chromium >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y chromium
-          fi
-          npm run dev -- --host 127.0.0.1 > /tmp/email-my-deck-vite.log 2>&1 &
+          node scripts/serve-dist.mjs dist 5173 > /tmp/serve-dist.log 2>&1 &
           for attempt in $(seq 1 30); do
             if curl --fail --silent http://127.0.0.1:5173/ >/dev/null; then break; fi
             sleep 1
