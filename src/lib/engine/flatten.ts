@@ -56,7 +56,7 @@ const HEARTBEAT_MS = 400
 /** A first guess at how long a slide takes, until one has finished. */
 const FIRST_PAGE_MS = 2000
 
-/** One drawn slide: its visible box in PDF units, its rotation, and a version per rung (empty bytes when it can never be chosen). */
+/** One drawn slide: its visible box in PDF units, its rotation, and its versions, one or two per rung (empty bytes when one can never be chosen). */
 export type FlatPage = { box: [number, number, number, number]; rotate: number; versions: PageVersion[] }
 
 /** Draws slides. The browser's is PDF.js (`pdfjs.ts`); tests use a stand-in. */
@@ -76,6 +76,7 @@ export type FlattenDeps = {
   now?: () => number
 }
 
+/** For each slide, the index of the version chosen; their total bytes; whether that fits; and the lowest clarity among them. */
 export type FlattenChoice = { rungs: number[]; bytes: number; fits: boolean; clarity: number }
 
 type Option = { sizes: number[]; clarity: number[] }
@@ -308,8 +309,8 @@ export async function flattenDocument(input: Uint8Array, budget: number, deps: F
   }
   const checks = verifyCandidate(session, OUTPUT, inspection)
   progress.update(1)
-  // Rungs run sharpest to lightest, so the highest chosen is the lightest any slide got.
-  const lightest = FLATTEN_RUNGS[Math.max(...result!.choice.rungs)]
+  // Rungs run sharpest to lightest, so the highest rung chosen is the lightest any slide got.
+  const lightest = FLATTEN_RUNGS[Math.max(...result!.choice.rungs.map((version, index) => pages[index].versions[version].rung))]
   const bytes = session.readFile(OUTPUT)
   session.remove(OUTPUT)
   return {
