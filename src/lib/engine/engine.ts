@@ -12,6 +12,8 @@ export type EngineDeps = {
   qpdf: QpdfLoader
   /** Null when this browser cannot decode and re-encode images. */
   codec: ImageCodec | null
+  /** Flate for the drawings the engine rewrites; the browser's CompressionStream when absent. */
+  deflate?: (data: Uint8Array) => Promise<Uint8Array>
   onProgress?: (event: ProgressEvent) => void
   now?: () => number
 }
@@ -227,7 +229,7 @@ export async function compressDocument(input: Uint8Array, budget: number, deps: 
     .map((image) => planImage(image, placements.get(image.ref), inspection.pages))
     .sort((a, b) => a.firstPage - b.firstPage || refNumber(a.image.ref) - refNumber(b.image.ref))
   // Drawings get the same treatment at every rung: round them once, while the first photos encode.
-  const rounding = roundDrawings(session, inspection, drawings)
+  const rounding = roundDrawings(session, inspection, drawings, deps.deflate ?? deflate, Boolean(deps.deflate))
   rounding.catch(() => {}) // Awaited below; this only keeps an early failure elsewhere from leaving it unhandled.
   let rounded: RoundedDrawings = { objects: {}, streams: 0, savedBytes: 0 }
   let baseBytes = (tidyBytes ?? originalBytes) - plans.reduce((sum, plan) => sum + plan.image.bytes, 0)
@@ -668,22 +670,25 @@ type RoundedDrawings = { objects: Record<string, StreamUpdate>; streams: number;
  * Round path coordinates in every drawing whose size on the page we know, keep
  * each one only when its compressed stream gets smaller, and stage the new
  * streams for `assemble`. A stream used inside a pattern, soft mask or Type 3
- * glyph, or on a page we could not read, is never touched.
+ * glyph, or on a page we could not read, is never touched. With a stronger
+ * `compress` than the browser's, drawings rounding leaves alone are
+ * recompressed too (losslessly); `streams` counts only the rounded ones.
  */
-async function roundDrawings(session: QpdfSession, inspection: Inspection, drawings: Drawing[]): Promise<RoundedDrawings> {
+async function roundDrawings(session: QpdfSession, inspection: Inspection, drawings: Drawing[], compress: (data: Uint8Array) => Promise<Uint8Array>, recompress: boolean): Promise<RoundedDrawings> {
   const rounded: RoundedDrawings = { objects: {}, streams: 0, savedBytes: 0 }
   for (const drawing of drawings.splice(0)) {
     const dict = inspection.graph.streamDict(drawing.ref)
     const storedBytes = dict ? inspection.graph.number(dict['/Length']) : null
     if (!dict || !storedBytes) continue
-    const content = roundPaths(drawing.bytes, drawing.pixelsPerUnit)
+    const roundedContent = roundPaths(drawing.bytes, drawing.pixelsPerUnit)
+    const content = roundedContent ?? (recompress ? drawing.bytes : null)
     if (!content) continue
     let compressed: Uint8Array
     let before = storedBytes
     try {
-      compressed = await deflate(content)
+      compressed = await compress(content)
       // A stream stored uncompressed would be compressed on writing anyway: compare like with like.
-      if (dict['/Filter'] === undefined) before = Math.min(before, (await deflate(drawing.bytes)).byteLength)
+      if (dict['/Filter'] === undefined) before = Math.min(before, (await compress(drawing.bytes)).byteLength)
     } catch {
       // No compression in this browser: keep every drawing as it is.
       break
@@ -695,7 +700,7 @@ async function roundDrawings(session: QpdfSession, inspection: Inspection, drawi
     delete next['/DecodeParms']
     delete next['/Length']
     rounded.objects[`obj:${drawing.ref}`] = { stream: { dict: next, datafile } }
-    rounded.streams += 1
+    if (roundedContent) rounded.streams += 1
     rounded.savedBytes += before - compressed.byteLength
   }
   // A few bytes are not worth touching anyone's drawings for.

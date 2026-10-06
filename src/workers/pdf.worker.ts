@@ -1,8 +1,10 @@
 import { toOutcome } from '../lib/compression'
-import { browserCodec, browserCodecAvailable, type ImageCodec } from '../lib/engine/codec'
+import { browserCodecAvailable, type ImageCodec } from '../lib/engine/codec'
 import { compressDocument, type EngineDeps } from '../lib/engine/engine'
 import { toEngineError } from '../lib/engine/errors'
 import { createCodecPool, poolSize } from '../lib/engine/pool'
+import { loadDeflate, type Deflate } from '../lib/encoders/deflate'
+import { loadCodec, WASM_ENCODERS } from '../lib/encoders'
 import type { ProgressEvent } from '../lib/engine/progress'
 import type { WorkerMessage, WorkerRequest } from '../lib/engine/protocol'
 import type { QpdfLoader, QpdfModuleFactory } from '../lib/engine/qpdf'
@@ -22,19 +24,40 @@ const loadQpdf: QpdfLoader = async () => {
   return { factory: factory as unknown as QpdfModuleFactory, wasmUrl }
 }
 
+/** Images run here when no image worker can: same encoders as the workers, loaded only then. */
+let localCodec: Promise<ImageCodec> | null = null
+const inThisWorker: ImageCodec = {
+  async encode(source, outputs) {
+    localCodec ??= loadCodec()
+    return (await localCodec).encode(source, outputs)
+  },
+}
+
 function createCodec(): ImageCodec | null {
   if (!browserCodecAvailable()) return null
-  if (typeof Worker !== 'function') return browserCodec
-  return createCodecPool(() => new Worker(new URL('./image.worker.ts', import.meta.url), { type: 'module' }), poolSize(), browserCodec)
+  if (typeof Worker !== 'function') return inThisWorker
+  return createCodecPool(() => new Worker(new URL('./image.worker.ts', import.meta.url), { type: 'module' }), poolSize(), inThisWorker)
 }
 
 /** Last fraction sent per job, so a later split request continues the bar instead of restarting it. */
 const lastFraction = new Map<number, number>()
 
-function depsFor(jobId: number, codec: ImageCodec | null): EngineDeps {
+/** libdeflate for the drawings the engine rewrites, loaded once; the browser's own Flate when it can't load. */
+let strongDeflate: Promise<Deflate | undefined> | null = null
+function drawingDeflate(): Promise<Deflate | undefined> {
+  if (!WASM_ENCODERS) return Promise.resolve(undefined)
+  strongDeflate ??= loadDeflate().catch((error) => {
+    console.warn('Email My Deck is using the browser\'s Flate for drawings', error)
+    return undefined
+  })
+  return strongDeflate
+}
+
+function depsFor(jobId: number, codec: ImageCodec | null, deflate: Deflate | undefined): EngineDeps {
   return {
     qpdf: loadQpdf,
     codec,
+    deflate,
     onProgress: (event: ProgressEvent) => {
       lastFraction.set(jobId, event.fraction)
       scope.postMessage({ type: 'progress', jobId, ...event })
@@ -48,7 +71,7 @@ scope.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   for (const jobId of lastFraction.keys()) if (jobId < request.jobId) lastFraction.delete(jobId)
   const codec = request.type === 'compress' ? createCodec() : null
   try {
-    const deps = depsFor(request.jobId, codec)
+    const deps = depsFor(request.jobId, codec, request.type === 'compress' ? await drawingDeflate() : undefined)
     if (request.type === 'compress') {
       const profile = getTargetProfile(request.profileId, request.customMessageMB ?? request.customMessageMiB)
       const budget = rawBudgetBytes(profile)
