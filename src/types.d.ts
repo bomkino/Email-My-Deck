@@ -4,3 +4,5 @@ declare module '@wasm-zoo/ghostscript' {
     dispose(): void
   }>
 }
+
+declare const __EMD_SOURCE_URL__: string

@@ -1,15 +1,259 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#ffffff" />
-    <meta name="description" content="Make a presentation PDF email-ready in your browser." />
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <title>Email My Deck — make a deck email-ready</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" id="theme-color" content="#f6f5f8">
+  <meta name="description" content="A free, private tool from pitch.dog that makes a presentation PDF small enough to email. It runs in your browser, so your deck is never uploaded.">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <link rel="canonical" href="https://pitch.dog/email-my-deck/">
+  <link rel="icon" id="theme-favicon" href="/assets/favicon-light.svg" type="image/svg+xml" vite-ignore>
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" vite-ignore>
+  <link rel="stylesheet" href="/assets/type/dist/pitchdog-system-v13.1.1.min.css" vite-ignore>
+  <link rel="stylesheet" href="/assets/pitchdog-design-system.css?v=20260903" vite-ignore>
+  <link rel="stylesheet" href="/assets/site-contact.css?v=6538223cb868" vite-ignore>
+  <link rel="stylesheet" href="/assets/site-nav.css?v=1" vite-ignore>
+  <script src="/assets/pitchdog-design-system.js" defer vite-ignore></script>
+  <script src="/assets/site-nav.js?v=1" defer vite-ignore></script>
+  <script src="/assets/site-analytics.js?v=cd8760ab6615" data-analytics-replay="off" defer vite-ignore></script>
+  <meta property="og:site_name" content="pitch.dog">
+  <meta property="og:title" content="Email My Deck — free, private, by pitch.dog">
+  <meta property="og:description" content="Too big to attach? Get the best-looking version of your deck that fits in an email. It never leaves your browser.">
+  <meta property="og:url" content="https://pitch.dog/email-my-deck/">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="https://pitch.dog/assets/social-card.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Email My Deck — free, private, by pitch.dog">
+  <meta name="twitter:description" content="Too big to attach? Get the best-looking version of your deck that fits in an email. It never leaves your browser.">
+  <meta name="twitter:image" content="https://pitch.dog/assets/social-card.png">
+  <title>Email My Deck — make a deck small enough to email, free · pitch.dog</title>
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"Email My Deck","url":"https://pitch.dog/email-my-deck/","applicationCategory":"UtilitiesApplication","operatingSystem":"Any modern web browser","isAccessibleForFree":true,"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"description":"Makes a presentation PDF small enough to email, in the browser, without uploading it.","license":"https://www.gnu.org/licenses/agpl-3.0.html","codeRepository":"https://github.com/bomkino/Email-My-Deck","creator":{"@id":"https://pitch.dog/#organization"}}</script>
+</head>
+<body>
+  <a class="skip" href="#tool">Skip to the tool</a>
+  <header class="header">
+    <nav class="nav" aria-label="Primary">
+      <a class="brand" href="/" aria-label="pitch.dog home"><img src="/assets/pitchdog-logomark.svg" width="32" height="32" alt="" vite-ignore><span>pitch.dog</span></a>
+      <div class="nav-links">
+        <a href="/work/">Work</a>
+        <details class="pd-nav-more" data-hide-below="601">
+          <summary>Free stuff<svg class="ph-icon" aria-hidden="true" viewBox="0 0 256 256"><use href="/assets/phosphor-sprite.svg#ph-caret-down"></use></svg></summary>
+          <div class="pd-nav-more-menu">
+            <a href="/blog/"><strong>Blog</strong><span>Practical reading on pitches</span></a>
+            <a href="/dictionaries/"><strong>Dictionary</strong><span>Pitch words, plainly explained</span></a>
+            <a href="/email-my-deck/" aria-current="page"><strong>Email My Deck</strong><span>Make a deck small enough to send</span></a>
+          </div>
+        </details>
+        <a href="/#pricing">Pricing</a>
+        <button class="theme-control" id="theme-button" type="button" aria-label="Theme: Auto. Activate to switch to Light."><svg class="ph-icon" id="theme-icon" aria-hidden="true" viewBox="0 0 256 256"><use href="/assets/phosphor-sprite.svg#ph-circle-half"></use></svg><span id="theme-label">Auto</span></button>
+        <a class="primary" href="/#book">Book a call</a>
+      </div>
+      <button class="mobile-menu-toggle" id="mobile-menu-toggle" type="button" aria-expanded="false" aria-controls="mobile-menu" aria-label="Open menu"><svg class="ph-icon menu-open-icon" aria-hidden="true" viewBox="0 0 256 256"><use href="/assets/phosphor-sprite.svg#ph-list"></use></svg><svg class="ph-icon menu-close-icon" aria-hidden="true" viewBox="0 0 256 256"><use href="/assets/phosphor-sprite.svg#ph-x"></use></svg></button>
+    </nav>
+  </header>
+  <div class="mobile-menu" id="mobile-menu" aria-hidden="true" inert>
+    <button class="mobile-menu-backdrop" type="button" data-mobile-menu-close aria-label="Close menu"></button>
+    <nav class="mobile-menu-panel" aria-label="Mobile navigation">
+      <p class="eyebrow">Where to?</p>
+      <a href="/"><span>01</span>Home <svg class="ph-icon" aria-hidden="true" viewBox="0 0 256 256"><use href="/assets/phosphor-sprite.svg#ph-arrow-right"></use></svg></a>
+      <a href="/work/"><span>02</span>Work <svg class="ph-icon" aria-hidden="true" viewBox="0 0 256 256"><use href="/assets/phosphor-sprite.svg#ph-arrow-right"></use></svg></a>
+      <a href="/#pricing"><span>03</span>Pricing <svg class="ph-icon" aria-hidden="true" viewBox="0 0 256 256"><use href="/assets/phosphor-sprite.svg#ph-arrow-right"></use></svg></a>
+      <a href="/#book"><span>04</span>Book a call <svg class="ph-icon" aria-hidden="true" viewBox="0 0 256 256"><use href="/assets/phosphor-sprite.svg#ph-arrow-right"></use></svg></a>
+      <a href="mailto:hello@pitch.dog"><span>05</span>Email us <svg class="ph-icon" aria-hidden="true" viewBox="0 0 256 256"><use href="/assets/phosphor-sprite.svg#ph-arrow-up-right"></use></svg></a>
+      <div class="pd-mobile-more"><p class="eyebrow">Free stuff</p><a href="/blog/">Blog</a><a href="/dictionaries/">Dictionary</a><a href="/email-my-deck/" aria-current="page">Email My Deck</a></div>
+      <div class="mobile-menu-note">Pitch decks · Treatments · Show bibles · Pitch sites<br>Working worldwide.</div>
+    </nav>
+  </div>
+
+  <main>
+    <section class="hero" aria-labelledby="page-title">
+      <div class="hero-copy">
+        <div class="hero-locator"><span class="hero-locator-mark" aria-hidden="true"></span><span>Free tool</span><span class="hero-locator-rule" aria-hidden="true"></span><span class="hero-locator-dot" aria-hidden="true">·</span><span>Runs in your browser</span></div>
+        <h1 id="page-title" data-pd-type="display.hero"><span class="hero-title-line"><span>Email</span></span><span class="hero-title-line"><span>My Deck.</span></span></h1>
+        <p class="hero-lede" data-pd-type="lead.hero">For decks too big to attach. Drop in your PDF and get back the best-looking version that fits in an email.</p>
+        <ul class="promises" aria-label="The short version">
+          <li><strong data-pd-type="label">Free, for real.</strong><span data-pd-type="body.small">No price, no account, no catch.</span></li>
+          <li><strong data-pd-type="label">Never uploaded.</strong><span data-pd-type="body.small">Your deck stays on your device.</span></li>
+          <li><strong data-pd-type="label">Open source.</strong><span data-pd-type="body.small"><a href="https://github.com/bomkino/Email-My-Deck">Read every line</a> on GitHub.</span></li>
+        </ul>
+      </div>
+      <div class="tool-wrap" id="tool" tabindex="-1">
+        <div class="tool" id="emd-root" aria-label="Email My Deck">
+          <noscript><div class="note note--error"><div><h2 data-pd-type="title.card">This tool needs JavaScript.</h2><p data-pd-type="body.default">The whole thing runs in your browser, so it can’t work with JavaScript switched off. Turn it on for this page, and your deck still never leaves your device.</p></div></div></noscript>
+        </div>
+        <div class="phone-hint">
+          <span class="phone-qr"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 29 29" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="M0,0h1v1h-1zM1,0h1v1h-1zM2,0h1v1h-1zM3,0h1v1h-1zM4,0h1v1h-1zM5,0h1v1h-1zM6,0h1v1h-1zM8,0h1v1h-1zM10,0h1v1h-1zM15,0h1v1h-1zM16,0h1v1h-1zM18,0h1v1h-1zM22,0h1v1h-1zM23,0h1v1h-1zM24,0h1v1h-1zM25,0h1v1h-1zM26,0h1v1h-1zM27,0h1v1h-1zM28,0h1v1h-1zM0,1h1v1h-1zM6,1h1v1h-1zM13,1h1v1h-1zM14,1h1v1h-1zM16,1h1v1h-1zM18,1h1v1h-1zM20,1h1v1h-1zM22,1h1v1h-1zM28,1h1v1h-1zM0,2h1v1h-1zM2,2h1v1h-1zM3,2h1v1h-1zM4,2h1v1h-1zM6,2h1v1h-1zM8,2h1v1h-1zM9,2h1v1h-1zM10,2h1v1h-1zM14,2h1v1h-1zM15,2h1v1h-1zM16,2h1v1h-1zM17,2h1v1h-1zM18,2h1v1h-1zM19,2h1v1h-1zM20,2h1v1h-1zM22,2h1v1h-1zM24,2h1v1h-1zM25,2h1v1h-1zM26,2h1v1h-1zM28,2h1v1h-1zM0,3h1v1h-1zM2,3h1v1h-1zM3,3h1v1h-1zM4,3h1v1h-1zM6,3h1v1h-1zM9,3h1v1h-1zM11,3h1v1h-1zM14,3h1v1h-1zM17,3h1v1h-1zM19,3h1v1h-1zM22,3h1v1h-1zM24,3h1v1h-1zM25,3h1v1h-1zM26,3h1v1h-1zM28,3h1v1h-1zM0,4h1v1h-1zM2,4h1v1h-1zM3,4h1v1h-1zM4,4h1v1h-1zM6,4h1v1h-1zM9,4h1v1h-1zM10,4h1v1h-1zM12,4h1v1h-1zM13,4h1v1h-1zM14,4h1v1h-1zM15,4h1v1h-1zM18,4h1v1h-1zM22,4h1v1h-1zM24,4h1v1h-1zM25,4h1v1h-1zM26,4h1v1h-1zM28,4h1v1h-1zM0,5h1v1h-1zM6,5h1v1h-1zM8,5h1v1h-1zM11,5h1v1h-1zM15,5h1v1h-1zM18,5h1v1h-1zM20,5h1v1h-1zM22,5h1v1h-1zM28,5h1v1h-1zM0,6h1v1h-1zM1,6h1v1h-1zM2,6h1v1h-1zM3,6h1v1h-1zM4,6h1v1h-1zM5,6h1v1h-1zM6,6h1v1h-1zM8,6h1v1h-1zM10,6h1v1h-1zM12,6h1v1h-1zM14,6h1v1h-1zM16,6h1v1h-1zM18,6h1v1h-1zM20,6h1v1h-1zM22,6h1v1h-1zM23,6h1v1h-1zM24,6h1v1h-1zM25,6h1v1h-1zM26,6h1v1h-1zM27,6h1v1h-1zM28,6h1v1h-1zM11,7h1v1h-1zM14,7h1v1h-1zM15,7h1v1h-1zM16,7h1v1h-1zM18,7h1v1h-1zM0,8h1v1h-1zM2,8h1v1h-1zM6,8h1v1h-1zM7,8h1v1h-1zM9,8h1v1h-1zM10,8h1v1h-1zM11,8h1v1h-1zM12,8h1v1h-1zM13,8h1v1h-1zM14,8h1v1h-1zM19,8h1v1h-1zM20,8h1v1h-1zM23,8h1v1h-1zM26,8h1v1h-1zM28,8h1v1h-1zM3,9h1v1h-1zM4,9h1v1h-1zM5,9h1v1h-1zM11,9h1v1h-1zM12,9h1v1h-1zM13,9h1v1h-1zM14,9h1v1h-1zM17,9h1v1h-1zM19,9h1v1h-1zM20,9h1v1h-1zM22,9h1v1h-1zM23,9h1v1h-1zM27,9h1v1h-1zM28,9h1v1h-1zM0,10h1v1h-1zM1,10h1v1h-1zM3,10h1v1h-1zM5,10h1v1h-1zM6,10h1v1h-1zM8,10h1v1h-1zM11,10h1v1h-1zM12,10h1v1h-1zM15,10h1v1h-1zM17,10h1v1h-1zM19,10h1v1h-1zM21,10h1v1h-1zM25,10h1v1h-1zM26,10h1v1h-1zM28,10h1v1h-1zM1,11h1v1h-1zM4,11h1v1h-1zM7,11h1v1h-1zM8,11h1v1h-1zM9,11h1v1h-1zM10,11h1v1h-1zM11,11h1v1h-1zM12,11h1v1h-1zM13,11h1v1h-1zM18,11h1v1h-1zM20,11h1v1h-1zM25,11h1v1h-1zM1,12h1v1h-1zM2,12h1v1h-1zM3,12h1v1h-1zM6,12h1v1h-1zM7,12h1v1h-1zM8,12h1v1h-1zM10,12h1v1h-1zM11,12h1v1h-1zM13,12h1v1h-1zM15,12h1v1h-1zM16,12h1v1h-1zM20,12h1v1h-1zM21,12h1v1h-1zM22,12h1v1h-1zM23,12h1v1h-1zM28,12h1v1h-1zM2,13h1v1h-1zM3,13h1v1h-1zM4,13h1v1h-1zM5,13h1v1h-1zM7,13h1v1h-1zM8,13h1v1h-1zM10,13h1v1h-1zM11,13h1v1h-1zM12,13h1v1h-1zM16,13h1v1h-1zM17,13h1v1h-1zM18,13h1v1h-1zM19,13h1v1h-1zM20,13h1v1h-1zM22,13h1v1h-1zM23,13h1v1h-1zM27,13h1v1h-1zM28,13h1v1h-1zM0,14h1v1h-1zM3,14h1v1h-1zM5,14h1v1h-1zM6,14h1v1h-1zM7,14h1v1h-1zM8,14h1v1h-1zM9,14h1v1h-1zM10,14h1v1h-1zM13,14h1v1h-1zM14,14h1v1h-1zM16,14h1v1h-1zM17,14h1v1h-1zM18,14h1v1h-1zM19,14h1v1h-1zM23,14h1v1h-1zM24,14h1v1h-1zM28,14h1v1h-1zM1,15h1v1h-1zM4,15h1v1h-1zM5,15h1v1h-1zM9,15h1v1h-1zM10,15h1v1h-1zM12,15h1v1h-1zM14,15h1v1h-1zM15,15h1v1h-1zM16,15h1v1h-1zM18,15h1v1h-1zM20,15h1v1h-1zM22,15h1v1h-1zM23,15h1v1h-1zM0,16h1v1h-1zM4,16h1v1h-1zM6,16h1v1h-1zM8,16h1v1h-1zM9,16h1v1h-1zM11,16h1v1h-1zM13,16h1v1h-1zM14,16h1v1h-1zM16,16h1v1h-1zM18,16h1v1h-1zM19,16h1v1h-1zM20,16h1v1h-1zM22,16h1v1h-1zM28,16h1v1h-1zM1,17h1v1h-1zM3,17h1v1h-1zM4,17h1v1h-1zM9,17h1v1h-1zM13,17h1v1h-1zM14,17h1v1h-1zM17,17h1v1h-1zM19,17h1v1h-1zM20,17h1v1h-1zM22,17h1v1h-1zM23,17h1v1h-1zM26,17h1v1h-1zM27,17h1v1h-1zM28,17h1v1h-1zM0,18h1v1h-1zM1,18h1v1h-1zM3,18h1v1h-1zM6,18h1v1h-1zM7,18h1v1h-1zM9,18h1v1h-1zM11,18h1v1h-1zM15,18h1v1h-1zM17,18h1v1h-1zM19,18h1v1h-1zM22,18h1v1h-1zM24,18h1v1h-1zM25,18h1v1h-1zM28,18h1v1h-1zM5,19h1v1h-1zM7,19h1v1h-1zM8,19h1v1h-1zM13,19h1v1h-1zM15,19h1v1h-1zM16,19h1v1h-1zM18,19h1v1h-1zM19,19h1v1h-1zM20,19h1v1h-1zM24,19h1v1h-1zM0,20h1v1h-1zM1,20h1v1h-1zM2,20h1v1h-1zM4,20h1v1h-1zM6,20h1v1h-1zM7,20h1v1h-1zM8,20h1v1h-1zM10,20h1v1h-1zM11,20h1v1h-1zM12,20h1v1h-1zM13,20h1v1h-1zM16,20h1v1h-1zM20,20h1v1h-1zM21,20h1v1h-1zM22,20h1v1h-1zM23,20h1v1h-1zM24,20h1v1h-1zM25,20h1v1h-1zM27,20h1v1h-1zM8,21h1v1h-1zM9,21h1v1h-1zM10,21h1v1h-1zM11,21h1v1h-1zM12,21h1v1h-1zM15,21h1v1h-1zM20,21h1v1h-1zM24,21h1v1h-1zM25,21h1v1h-1zM26,21h1v1h-1zM28,21h1v1h-1zM0,22h1v1h-1zM1,22h1v1h-1zM2,22h1v1h-1zM3,22h1v1h-1zM4,22h1v1h-1zM5,22h1v1h-1zM6,22h1v1h-1zM8,22h1v1h-1zM9,22h1v1h-1zM13,22h1v1h-1zM14,22h1v1h-1zM15,22h1v1h-1zM17,22h1v1h-1zM20,22h1v1h-1zM22,22h1v1h-1zM24,22h1v1h-1zM28,22h1v1h-1zM0,23h1v1h-1zM6,23h1v1h-1zM10,23h1v1h-1zM11,23h1v1h-1zM12,23h1v1h-1zM14,23h1v1h-1zM15,23h1v1h-1zM20,23h1v1h-1zM24,23h1v1h-1zM0,24h1v1h-1zM2,24h1v1h-1zM3,24h1v1h-1zM4,24h1v1h-1zM6,24h1v1h-1zM9,24h1v1h-1zM10,24h1v1h-1zM12,24h1v1h-1zM13,24h1v1h-1zM14,24h1v1h-1zM16,24h1v1h-1zM19,24h1v1h-1zM20,24h1v1h-1zM21,24h1v1h-1zM22,24h1v1h-1zM23,24h1v1h-1zM24,24h1v1h-1zM25,24h1v1h-1zM27,24h1v1h-1zM28,24h1v1h-1zM0,25h1v1h-1zM2,25h1v1h-1zM3,25h1v1h-1zM4,25h1v1h-1zM6,25h1v1h-1zM10,25h1v1h-1zM14,25h1v1h-1zM15,25h1v1h-1zM16,25h1v1h-1zM19,25h1v1h-1zM20,25h1v1h-1zM21,25h1v1h-1zM24,25h1v1h-1zM25,25h1v1h-1zM26,25h1v1h-1zM28,25h1v1h-1zM0,26h1v1h-1zM2,26h1v1h-1zM3,26h1v1h-1zM4,26h1v1h-1zM6,26h1v1h-1zM8,26h1v1h-1zM10,26h1v1h-1zM14,26h1v1h-1zM15,26h1v1h-1zM17,26h1v1h-1zM20,26h1v1h-1zM21,26h1v1h-1zM24,26h1v1h-1zM27,26h1v1h-1zM28,26h1v1h-1zM0,27h1v1h-1zM6,27h1v1h-1zM10,27h1v1h-1zM11,27h1v1h-1zM13,27h1v1h-1zM15,27h1v1h-1zM18,27h1v1h-1zM20,27h1v1h-1zM21,27h1v1h-1zM22,27h1v1h-1zM25,27h1v1h-1zM0,28h1v1h-1zM1,28h1v1h-1zM2,28h1v1h-1zM3,28h1v1h-1zM4,28h1v1h-1zM5,28h1v1h-1zM6,28h1v1h-1zM8,28h1v1h-1zM9,28h1v1h-1zM10,28h1v1h-1zM14,28h1v1h-1zM15,28h1v1h-1zM16,28h1v1h-1zM20,28h1v1h-1zM23,28h1v1h-1zM24,28h1v1h-1zM28,28h1v1h-1z"/></svg></span>
+          <p data-pd-type="body.small"><strong data-pd-type="label">Rather do it on your phone?</strong> Point your camera here. It works there too, and your deck stays on the phone.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section--split" id="what" aria-labelledby="what-title">
+      <div class="section-head">
+        <p class="eyebrow" data-pd-type="metadata">What it’s for</p>
+        <h2 id="what-title" data-pd-type="heading.section">Decks, by email. That’s the whole job.</h2>
+      </div>
+      <div class="section-body">
+        <p data-pd-type="lead.section">Email My Deck takes a presentation PDF that’s too heavy to attach and hands back the best-looking version that fits. Looking good comes first. It will pass on a smaller file if that file would make your slides harder to read.</p>
+        <p data-pd-type="body.reading">It may well do fine with a report or a portfolio. But every choice inside it, from how hard it squeezes a photo to the moment it stops and splits, was made for slides that someone will read on a screen, without you there to explain them.</p>
+      </div>
+    </section>
+
+    <section class="section" id="how" aria-labelledby="how-title">
+      <div class="section-head section-head--wide">
+        <p class="eyebrow" data-pd-type="metadata">How it works, in plain words</p>
+        <h2 id="how-title" data-pd-type="heading.section">Gentle first. Clever only if it has to be.</h2>
+      </div>
+      <ol class="steps">
+        <li><span class="step-index" data-pd-type="data">01</span><h3 data-pd-type="title.card">You drop in a PDF.</h3><p data-pd-type="body.default">Your browser opens it, right here. Nothing is uploaded, because there’s nowhere for it to go.</p></li>
+        <li><span class="step-index" data-pd-type="data">02</span><h3 data-pd-type="title.card">We tidy the file.</h3><p data-pd-type="body.default">Plenty of decks are heavy for silly reasons, like duplicated bits and bloated insides. Tidying those changes nothing you can see.</p></li>
+        <li><span class="step-index" data-pd-type="data">03</span><h3 data-pd-type="title.card">Then the photos, carefully.</h3><p data-pd-type="body.default">Usually a few huge photos are doing all the damage. We re-save them at screen quality and shrink the ones bigger than any screen will show.</p></li>
+        <li><span class="step-index" data-pd-type="data">04</span><h3 data-pd-type="title.card">We check before you get it.</h3><p data-pd-type="body.default">Same number of slides, same order, same page sizes. If anything’s off, we don’t hand it over.</p></li>
+        <li><span class="step-index" data-pd-type="data">05</span><h3 data-pd-type="title.card">One file, or a few parts.</h3><p data-pd-type="body.default">If one file can’t fit without blurring your slides, you get numbered parts and an email plan instead. Split, not smudged.</p></li>
+      </ol>
+    </section>
+
+    <section class="section section--riddle" id="mailboxes" aria-labelledby="riddle-title">
+      <div class="section-head section-head--wide">
+        <p class="eyebrow" data-pd-type="metadata">The 25 MB riddle</p>
+        <h2 id="riddle-title" data-pd-type="heading.section">Your email weighs more than your deck.</h2>
+      </div>
+      <div class="section-body">
+        <p data-pd-type="lead.section">To send an attachment, your email app packs it into plain text so it can travel between mail servers. Packing makes it roughly a third bigger. Nothing mysterious is going on, though it feels that way when an email bounces.</p>
+        <figure class="weigh" data-reveal aria-labelledby="weigh-caption">
+          <div class="weigh-row"><span data-pd-type="metadata">Your deck</span><span class="weigh-track weigh-track--first"><span class="weigh-bar weigh-bar--deck"><span data-pd-type="data">19 MB</span></span></span></div>
+          <div class="weigh-row"><span data-pd-type="metadata">The email it becomes</span><span class="weigh-track"><span class="weigh-bar weigh-bar--email"><span data-pd-type="data">about 26 MB</span></span></span></div>
+          <figcaption id="weigh-caption" data-pd-type="body.small">A 19 MB deck can turn into a 26 MB email, and a mailbox with a 25 MB limit sends it back. So we aim below the limit you pick, and leave room for your message too.</figcaption>
+        </figure>
+        <div class="table-wrap">
+          <table class="mailbox-table">
+            <caption class="sr-only">Mailbox settings and what they mean</caption>
+            <thead><tr><th scope="col" data-pd-type="metadata">Setting</th><th scope="col" data-pd-type="metadata">Pick it when</th><th scope="col" data-pd-type="metadata">Deck can be up to</th></tr></thead>
+            <tbody data-pd-type="body.default">
+              <tr><th scope="row" data-pd-type="label">Most mailboxes <em class="badge">Our pick</em></th><td>You’re not sure where it’s going. It suits the most people.</td><td data-pd-type="data">about 17.8 MB</td></tr>
+              <tr><th scope="row" data-pd-type="label">Strict or work mailboxes</th><td>You’re sending to a company, to iCloud Mail, or to someone whose inbox has bounced you before.</td><td data-pd-type="data">about 14.2 MB</td></tr>
+              <tr><th scope="row" data-pd-type="label">Gmail to Gmail only</th><td>You and every recipient use Gmail or Google Workspace. Gmail lets you attach up to 25 MB, then sends a heavier email. Gmail inboxes take it. Others might not.</td><td data-pd-type="data">about 24.1 MB</td></tr>
+              <tr><th scope="row" data-pd-type="label">I know my limit</th><td>Your IT team gave you a number. Type it in and we’ll do the maths.</td><td data-pd-type="data">worked out for you</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="recommend" data-pd-type="body.default"><strong>What we recommend:</strong> leave it on Most mailboxes. Change it only when you know where the deck is going.</p>
+      </div>
+    </section>
+
+    <section class="section" id="deal" aria-labelledby="deal-title">
+      <div class="section-head section-head--wide">
+        <p class="eyebrow" data-pd-type="metadata">The whole deal</p>
+        <h2 id="deal-title" data-pd-type="heading.section">Free. Private. Open. Here’s what that means.</h2>
+      </div>
+      <div class="cards">
+        <article class="card">
+          <p class="card-index" data-pd-type="data">Free</p>
+          <h3 data-pd-type="title.card">No price, no trial, no account.</h3>
+          <p data-pd-type="body.default">And no premium version hiding behind a button. We built this because we kept needing it, then kept meeting people who needed it too. Giving it away is the point.</p>
+        </article>
+        <article class="card">
+          <p class="card-index" data-pd-type="data">Private</p>
+          <h3 data-pd-type="title.card">Your deck never leaves your device.</h3>
+          <p data-pd-type="body.default">Your own browser opens it, rebuilds it and checks it. It’s never uploaded, so we can’t see it and neither can anyone else.</p>
+          <p data-pd-type="body.small">Like the rest of pitch.dog, this page counts visits with Google Analytics, without session recordings. That tells us someone dropped by. It never includes your file, its name or a single slide. <a href="/privacy/">More on that</a>.</p>
+        </article>
+        <article class="card">
+          <p class="card-index" data-pd-type="data">Open</p>
+          <h3 data-pd-type="title.card">Every line is public.</h3>
+          <p data-pd-type="body.default">The code is <a href="https://github.com/bomkino/Email-My-Deck">on GitHub</a>, so you, or your most suspicious friend, can check everything on this page. It stands on QPDF, Ghostscript and pdf-lib, open-source projects people have spent years getting right. We built the part in between: deciding, deck by deck, what to keep and what to let go.</p>
+        </article>
+      </div>
+
+      <details class="nerd">
+        <summary><span data-pd-type="title.functional">I’m a nerd. Show me the engine.</span><svg class="ph-icon" aria-hidden="true" viewBox="0 0 256 256"><use href="/assets/phosphor-sprite.svg#ph-caret-down"></use></svg></summary>
+        <div class="nerd-body">
+          <div class="nerd-col">
+            <h3 data-pd-type="metadata">Where it runs</h3>
+            <p data-pd-type="body.default">Everything happens in a dedicated Web Worker in your tab. QPDF and Ghostscript are compiled to WebAssembly and served from this site, not a CDN. The page’s Content Security Policy only allows connections back to pitch.dog and its analytics hosts, and the code never sends your file to either.</p>
+            <h3 data-pd-type="metadata">The pipeline</h3>
+            <ol class="nerd-list" data-pd-type="body.default">
+              <li>Inspect with pdf-lib: page count, page sizes, and anything we refuse to rewrite (encryption, form fields, signatures, embedded files, JavaScript).</li>
+              <li>If the original already fits, you get the original bytes, untouched.</li>
+              <li>QPDF lossless pass: object streams, recompressed Flate streams, no visible change.</li>
+              <li>QPDF image pass: eligible JPEGs re-encoded at screen quality.</li>
+              <li>Ghostscript, loaded only when needed: oversized images downsampled.</li>
+              <li>Verify: reopen the result and compare page count and every page size with the original.</li>
+              <li>Still too big? Split by page range and measure each part against the budget.</li>
+            </ol>
+          </div>
+          <div class="nerd-col">
+            <h3 data-pd-type="metadata">The maths</h3>
+            <p data-pd-type="body.default">Base64 turns every 3 bytes into 4 characters and MIME adds a line break every 76, so an attachment grows about 1.37×. We also keep 512 KB for your message. That’s how a 25 MB mailbox becomes a 17.8 MB deck budget.</p>
+            <h3 data-pd-type="metadata">The licence</h3>
+            <p data-pd-type="body.default">AGPL-3.0-or-later, partly because Ghostscript is AGPL. Fork it, fix it, host it. If you host a changed version, share your changes too.</p>
+            <ul class="nerd-links" data-pd-type="body.default">
+              <li><a href="https://github.com/bomkino/Email-My-Deck">Source on GitHub</a></li>
+              <li><a href="licenses/THIRD-PARTY-LICENSES.md">Third-party licences</a></li>
+              <li><a href="licenses/LICENSE">Licence</a></li>
+              <li><a id="emd-build-link" href="https://github.com/bomkino/Email-My-Deck">The exact code behind this page</a></li>
+            </ul>
+          </div>
+        </div>
+      </details>
+    </section>
+
+    <section class="section section--split" id="faq" aria-labelledby="faq-title">
+      <div class="section-head">
+        <p class="eyebrow" data-pd-type="metadata">Questions</p>
+        <h2 id="faq-title" data-pd-type="heading.section">Before you ask.</h2>
+      </div>
+      <div class="faq">
+        <details><summary data-pd-type="title.functional">Is it really free?</summary><p data-pd-type="body.default">Yes. There’s no price, no trial and no account, and nothing waits behind a button. We get nothing from your deck, and we like it that way.</p></details>
+        <details><summary data-pd-type="title.functional">Can you see my deck?</summary><p data-pd-type="body.default">No. Your browser opens it, rebuilds it and checks it on your device. It’s never uploaded, and there isn’t a server for it to go to. This page does count visits, like every pitch.dog page, but that only tells us someone stopped by. It never includes your file, its name or anything in it.</p></details>
+        <details><summary data-pd-type="title.functional">Why not use another PDF compressor?</summary><p data-pd-type="body.default">Use whatever you trust. Just know that many online PDF tools work by uploading your file to their servers, and once it’s there, you can’t see what happens to it. Decks tend to be private: unannounced projects, numbers, names. Here the work happens on your device, so there’s nothing to hand over.</p></details>
+        <details><summary data-pd-type="title.functional">Will my deck look worse?</summary><p data-pd-type="body.default">Sometimes a little, in photos, if you zoom right in. Text stays text, so it stays sharp. We check every result before you get it, and if the only way to fit is to make your slides blurry, we split the deck instead.</p></details>
+        <details><summary data-pd-type="title.functional">Why did it split my deck?</summary><p data-pd-type="body.default">Because one file would have meant blurry slides. We’d rather you send two emails than one that makes someone squint. Each part is numbered, fits your limit, and comes with an email plan you can copy.</p></details>
+        <details><summary data-pd-type="title.functional">Which mailbox should I pick?</summary><p data-pd-type="body.default">Leave it on Most mailboxes unless you know otherwise. Pick Strict if you’re sending to a company or an iCloud address. Pick Gmail to Gmail only when you and everyone you’re sending to are on Gmail or Google Workspace. <a href="#mailboxes">The 25 MB riddle</a> explains why it matters.</p></details>
+        <details><summary data-pd-type="title.functional">Does it guarantee my email arrives?</summary><p data-pd-type="body.default">No, and be wary of anything that does. We make the file fit the limit you chose. Spam filters, company rules and full inboxes are beyond any file’s control.</p></details>
+        <details><summary data-pd-type="title.functional">It isn’t working. What now?</summary><p data-pd-type="body.default">Try Chrome or Brave first, on a laptop if you can. It also works in Safari, Edge and Firefox, on phones as well as laptops, as long as the browser is reasonably recent. Very big decks are happier on a laptop than on a phone. Still stuck? Copy this page’s link and open it in another browser.</p><button class="button button--small" type="button" data-copy-link><svg class="ph-icon" aria-hidden="true" viewBox="0 0 256 256"><use href="/assets/phosphor-sprite.svg#ph-arrow-up-right"></use></svg><span>Copy this page’s link</span></button></details>
+        <details><summary data-pd-type="title.functional">Can I use my phone?</summary><p data-pd-type="body.default">Yes. Open this page on your phone, pick the PDF from Files, and save the result. A big deck takes longer on a phone, so give it a minute.</p></details>
+        <details><summary data-pd-type="title.functional">What won’t it do?</summary><p data-pd-type="body.default">It won’t open password-protected PDFs, or rewrite ones with forms, signatures, attachments or scripts, because that could quietly break them. It doesn’t convert PowerPoint or Keynote files, so export a PDF first. And it doesn’t send email. It hands you the file and steps aside.</p></details>
+        <details><summary data-pd-type="title.functional">Who made this, and why?</summary><p data-pd-type="body.default">pitch.dog, a small studio that writes and designs pitch decks. We built it for ourselves, then kept seeing people ask for exactly this. So we built it properly and gave it away.</p></details>
+      </div>
+    </section>
+
+    <section class="help" aria-labelledby="help-title">
+      <div class="help-inner">
+        <div>
+          <p class="eyebrow" data-pd-type="metadata">From the people who made this</p>
+          <h2 id="help-title" data-pd-type="heading.section">Need a hand with the deck itself?</h2>
+        </div>
+        <div class="help-copy">
+          <p data-pd-type="lead.section">Making decks is our day job. We write and design pitch decks, director’s treatments and show bibles for film, TV, advertising and startups. If the deck you just shrank needs a sharper story or a better look, we’re a tap away, and we’d love to talk.</p>
+          <p data-pd-type="body.default">No pressure, no strings. The tool stays free either way.</p>
+          <div class="button-row">
+            <a class="button button--solid" href="/work/">See our work <span aria-hidden="true">→</span></a>
+            <a class="button" href="/#book">Book a call</a>
+            <a class="button" href="mailto:hello@pitch.dog">Email us</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="farewell-note" data-reveal aria-labelledby="farewell-title">
+      <p class="eyebrow" data-pd-type="metadata" id="farewell-title">Before you hit send</p>
+      <p class="farewell-lead" data-pd-type="quote.feature">A deck is you, putting yourself out there.</p>
+      <div class="farewell-body">
+        <p data-pd-type="body.reading">It’s months of thinking, a few hundred small decisions and ten versions of the first slide, packed into one file and sent to someone who might say yes. By the time it gets here, the work is done. This is the last stop before it leaves you.</p>
+        <p data-pd-type="body.reading">So, from all of us at pitch.dog: we hope it’s read to the end. We hope the reply is the one you’ve been refreshing for. And whatever you made it for, we hope it finds its yes, and brings you the kind of joy that makes all ten versions of that first slide worth it.</p>
+        <p class="farewell-sign" data-pd-type="title.card"><em data-pd-emphasis="head-italic">Go well, little deck.</em></p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <span>Made with care. Usually with Spotty, Luna, and Juno nearby.</span>
+      <span>Email My Deck is free software (<a href="licenses/LICENSE">AGPL-3.0</a>) · <a href="https://github.com/bomkino/Email-My-Deck">Source</a> · <a href="/">Home</a> · <a href="mailto:hello@pitch.dog">hello@pitch.dog</a></span>
+    </div>
+  </footer>
+  <a class="pd-whatsapp-fab" href="https://wa.me/message/NR6Z7K3HBOVPJ1" target="_blank" rel="noopener noreferrer" aria-label="Chat with pitch.dog on WhatsApp (opens in a new tab)" title="Chat on WhatsApp"><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M187.58,144.84l-32-16a8,8,0,0,0-8,.5l-14.69,9.8a40.55,40.55,0,0,1-16-16l9.8-14.69a8,8,0,0,0,.5-8l-16-32A8,8,0,0,0,104,64a40,40,0,0,0-40,40,88.1,88.1,0,0,0,88,88,40,40,0,0,0,40-40A8,8,0,0,0,187.58,144.84ZM152,176a72.08,72.08,0,0,1-72-72A24,24,0,0,1,99.29,80.46l11.48,23L101,118a8,8,0,0,0-.73,7.51,56.47,56.47,0,0,0,30.15,30.15A8,8,0,0,0,138,155l14.61-9.74,23,11.48A24,24,0,0,1,152,176ZM128,24A104,104,0,0,0,36.18,176.88L24.83,210.93a16,16,0,0,0,20.24,20.24l34.05-11.35A104,104,0,1,0,128,24Zm0,192a87.87,87.87,0,0,1-44.06-11.81,8,8,0,0,0-6.54-.67L40,216,52.47,178.6a8,8,0,0,0-.66-6.54A88,88,0,1,1,128,216Z"/></svg></a>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
 </html>

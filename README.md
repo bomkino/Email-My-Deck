@@ -2,7 +2,7 @@
 
 Email My Deck answers one narrow question: **“How do I get this deck into an email without making it unreadable?”**
 
-Drop in a presentation PDF, choose the mailbox limit, and get either a verified `-email-version.pdf` or measured sequential parts with a ready-to-copy email plan. The PDF stays in the browser. There is no account, upload endpoint, analytics, email integration, or third-party font dependency.
+Drop in a presentation PDF, choose the mailbox limit, and get either a verified `-email-version.pdf` or measured sequential parts with a ready-to-copy email plan. The PDF stays in the browser. There is no account, upload endpoint, email integration, or third-party font dependency. On pitch.dog the page counts visits with Google Analytics, like the rest of the site; the PDF, its name and its contents never leave the browser.
 
 This repository is the complete shareable implementation and handoff for the current release. Start with [HANDOFF.md](HANDOFF.md) for the product story, decisions, test evidence, and deployment gates. [DECISIONS.md](DECISIONS.md) records the important tradeoffs so a future contributor does not accidentally undo the privacy or quality guarantees.
 
@@ -45,7 +45,17 @@ npm run dev -- --host 127.0.0.1
 npm run smoke
 ```
 
-`npm run smoke` uses the synthetic corpus and a Playwright browser. It fails if a request leaves the local origin.
+`npm run smoke` uses the synthetic corpus and a Playwright browser. It fails if a request goes anywhere except the page's own origin and the Google Analytics hosts, or if any request mentions the test deck's file name. Set `SMOKE_URL` to test the pitch.dog build (for example `http://127.0.0.1:8090/email-my-deck/` with `apps/main-site` served locally) and `CHROMIUM_PATH` to use another browser.
+
+## On pitch.dog
+
+The live home for the tool is `pitch.dog/email-my-deck/`. `index.html` is the whole pitch.dog page; the React tool mounts inside it at `#emd-root`. The page borrows pitch.dog's type system, nav, analytics loader and icons by absolute path, so those only appear when it is served from the main site; under `npm run dev` the tool works but the page is unstyled around it.
+
+```bash
+npm run build:pitchdog   # builds dist-pitchdog/ with base /email-my-deck/
+```
+
+Copy `dist-pitchdog/` to `apps/main-site/email-my-deck/` in `bomkino/pitchdog-cloudflare-sites`. `BUILD.json` records the commit it came from, and `licenses/` carries the AGPL text, third-party notices and provenance. Commit here first so `BUILD.json` names a clean commit.
 
 ## Architecture
 

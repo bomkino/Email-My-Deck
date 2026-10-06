@@ -10,7 +10,8 @@
     "corpus": "node scripts/generate-corpus.mjs",
     "smoke": "node scripts/smoke.mjs",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "build:pitchdog": "tsc -b && node scripts/build-pitchdog.mjs"
   },
   "dependencies": {
     "@neslinesli93/qpdf-wasm": "^0.3.0",
