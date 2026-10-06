@@ -28,13 +28,13 @@ export const mailboxWhy =
 export type StageKey = 'read' | 'tidy' | 'photos' | 'resize' | 'verify' | 'split' | 'work'
 
 export const stageCopy: Record<StageKey, string> = {
-  read: 'Opening your deck, on this device only',
-  tidy: 'Tidying the file’s insides. Slides untouched.',
-  photos: 'Re-saving photos at screen quality',
-  resize: 'Shrinking photos that are bigger than any screen',
+  read: 'Opening your deck. Nobody else is invited.',
+  tidy: 'Tidying the file’s insides. Your slides won’t notice.',
+  photos: 'Asking the photos to pack lighter',
+  resize: 'Shrinking photos that were dressed for a billboard',
   verify: 'Counting every slide back in',
-  split: 'Dealing the slides into parts that fit',
-  work: 'Working out the best-looking version that fits',
+  split: 'Splitting it into parts. Nobody gets left behind.',
+  work: 'Trying on versions until one fits',
 }
 
 // Map whatever the engine reports onto plain words. Unknown labels fall
@@ -68,54 +68,70 @@ export const idleCopy = {
 
 export const busyCopy = {
   eyebrow: 'Working on this device',
-  splittingTitle: 'Packing it into parts',
-  workingTitle: 'Making it fit',
+  splittingTitle: 'Packing it into parts.',
+  workingTitle: 'Making it fit.',
   cancel: 'Cancel',
-  tipsEyebrow: 'While you wait',
+  commentaryEyebrow: 'Meanwhile',
   dogFactEyebrow: 'A short break',
-  anotherTip: 'Another tip',
+  another: 'Another one',
   // The line under the bar changes as the wait gets longer. Each one is true:
   // the device does the work, and the watchdog stops a stalled job and says so.
   waits: [
-    { after: 0, text: 'Nothing is being uploaded. Your device is doing the heavy lifting, so a big deck can take a minute or two.' },
-    { after: 25_000, text: 'Still going. Big photos take a while to repack, and your device is doing every one of them itself.' },
-    { after: 75_000, text: 'Still at it. A deck this size can take a few minutes, especially on a phone. The upside: nobody else ever gets a copy.' },
-    { after: 150_000, text: 'A long one, but it’s still working. If it ever stalls, we’ll stop and say so. Good moment for a glass of water.' },
+    { after: 0, text: 'Nothing gets uploaded. Your device is doing all the lifting itself, so a big deck can take a minute.' },
+    { after: 25_000, text: 'Still going. Some of these photos are enormous, and your device is handling each one personally.' },
+    { after: 75_000, text: 'Still at it. Phones take their time with a deck this size. No rush, and nobody else is looking.' },
+    { after: 150_000, text: 'A long one. It’s still working, and if it ever gets stuck, we’ll stop and tell you. Stretch your legs. Your deck can’t.' },
   ],
 }
 
 export const waitFor = (elapsed: number) => [...busyCopy.waits].reverse().find((wait) => elapsed >= wait.after)?.text ?? busyCopy.waits[0].text
 
-// Loading-screen tips. Useful first, then the turn. One dog fact, because
-// someone has to keep the dogs in the conversation.
-export const tips: string[] = [
-  'This deck is about to be read without you in the room. Nobody will be there to say “so what this slide is saying is…”, so the slide has to say it.',
-  'Name the file like someone will search for it at midnight. “Acme-Series-A-2026.pdf” beats “FINAL_final_v7 (2).pdf”.',
-  'Put the ask on a slide, with a number in it. “We’d love your support” is a mood. “2 million for 18 months” is a question someone can say yes to.',
-  'If you have to apologise for a slide (“sorry, this one’s busy”), you already know what to do with it.',
-  'Squint at each slide. Whatever you can still make out is what it’s about. Hopefully on purpose.',
-  'Decks get forwarded. Put your name and email on the last slide so yours can find its way home.',
-  'A number needs company. “40%” of what, since when, compared to whom?',
-  'Give every chart a headline that says what to see. “Revenue doubled” beats “Revenue, 2024–2026”. Nobody has ever been moved by an axis label.',
-  'Your deck doesn’t have to explain everything. It has to earn the meeting where you do.',
-  'Heavy decks are usually heavy because of three enormous photos. A 6,000-pixel image on a slide is a poster in disguise.',
-  'Video rarely survives the trip into a PDF. Put in your best frame and a link. People click a good still. Nobody clicks a mysterious grey rectangle.',
-  'Light grey text on white looks elegant on your screen and invisible on everyone else’s.',
-  'Page numbers, please. Somebody will want to say “about slide 12…” in the reply.',
-  'One idea per slide. Two if they’re small and get along.',
-  'Read it out loud once. The slide you rush through is the one to cut.',
-  'The appendix is where good slides go to be optional. Let them.',
-  'A bullet point with its own bullet points is a document wearing a slide costume.',
-  'Do the maths for your reader. Nobody opens a calculator to fall for a business. Show the working in the appendix.',
-  'Fonts tend to go missing when you send the slides file itself. A PDF keeps them. Which, look at you, you already knew.',
-  'Typos are tiny and somehow the only thing anyone remembers. One more read before you send.',
-  'Save the mystery for the film. The first slide should say what this is in one line.',
-  'Write the email like it’s slide zero. It gets read first.',
-  'Plenty of decks get opened on a phone first, between two other things. Check that your smallest text survives that.',
-  'Logos of companies you’ve talked to are not traction. Logos of companies that paid you are.',
-  'If the team slide is the best slide, either the team is great or the rest needs work. Possibly both.',
-  'Dog fact: no two dogs have the same nose print. It works like a fingerprint. (Nothing to do with decks. You looked like you needed a break.)',
-]
+// Loading-screen commentary: our kind of funny about whatever is happening
+// right now. No advice. The card switches to the current step's lines as the
+// engine moves on, then wanders into the general ones. Exactly one dog fact.
+export type CommentaryKey = 'read' | 'tidy' | 'photos' | 'verify' | 'split' | 'any'
+
+export const commentary: Record<CommentaryKey, string[]> = {
+  read: [
+    'Every slide is present and accounted for. Even the one you keep meaning to delete.',
+    'First, a good look at what we’re working with. It’s a lovely deck. It’s also quite heavy.',
+  ],
+  tidy: [
+    'Decks collect junk the way bags collect receipts. Clearing some out.',
+    'Plenty of a file’s weight never makes it onto a slide. That goes first.',
+  ],
+  photos: [
+    'A photo built for a billboard is finding out it’s going to a laptop. It’s taking it well.',
+    'Text weighs almost nothing and stays exactly as sharp. It’s the photos that packed three coats.',
+    'Every pixel here is headed for a screen, not a billboard. Packing accordingly.',
+    'Photos can lose a surprising amount of weight before anyone’s eyes notice. Surprising to the photos, mostly.',
+  ],
+  verify: [
+    'Counting slides back in. If one’s missing, nobody leaves.',
+    'Same slides, same order, same page sizes. Checking anyway. We’re like that.',
+  ],
+  split: [
+    'One email can’t carry all of this without squashing it, so your deck is getting a travel companion or two.',
+    'Splitting between slides, never through one. Nobody gets cut in half.',
+    'Two emails with sharp slides beat one email that makes someone squint. It wasn’t a close vote.',
+  ],
+  any: [
+    'Your deck has no idea any of this is happening. Best not to tell it.',
+    'All of this is happening inside your browser. If your fan just got louder, that’s the sound of privacy.',
+    'Not one byte is leaving the room. The room is your browser. It’s a nice room.',
+    'Email adds about a third to whatever you attach. Nobody asked for that, least of all your deck.',
+    'Somewhere, a mail server is weighing every attachment with a very straight face. We’re getting yours past it.',
+    'Soon this deck will be in someone’s inbox at 7:42 on a Tuesday, between a receipt and a newsletter. Big day.',
+    'This counts as work. Tell anyone who asks that you’re compressing a deck.',
+    'The progress bar is doing its best. It moves when the work does, and fidgets a little in between.',
+    'The 25 MB limit was set by someone who never had to email a deck. We think about them often.',
+  ],
+}
+
+export const dogFact = 'Dog fact: no two dogs have the same nose print. It works like a fingerprint. (Nothing to do with decks. You looked like you needed a break.)'
+
+export const commentaryKeyFor = (stage: StageKey | null): CommentaryKey =>
+  stage === 'read' || stage === 'tidy' || stage === 'photos' || stage === 'verify' || stage === 'split' ? stage : stage === 'resize' ? 'photos' : 'any'
 
 export const readyCopy = {
   eyebrow: 'Checked on this device',

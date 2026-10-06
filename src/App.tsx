@@ -367,7 +367,7 @@ function Busy({ file, stage, progress, headingRef, onCancel }: { file: File; sta
     </div>
     <div className="progress-meta" data-pd-type="data"><span className="progress-label">{label}</span><span>{percent}% · {formatElapsed(elapsed)}</span></div>
     <p className="busy-note" key={waitFor(elapsed)} data-pd-type="body.small">{waitFor(elapsed)}</p>
-    <TipCard />
+    <TipCard stage={key} />
     <button className="text-button busy-cancel" onClick={onCancel} type="button">{busyCopy.cancel}</button>
   </section>
 }

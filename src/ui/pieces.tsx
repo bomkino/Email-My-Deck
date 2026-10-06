@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { busyCopy, tips } from './copy'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { busyCopy, commentary, commentaryKeyFor, dogFact, type CommentaryKey, type StageKey } from './copy'
 import { formatSize } from './format'
 
 type IconName = 'file' | 'download' | 'check' | 'arrow' | 'copy' | 'link' | 'close' | 'shuffle'
@@ -78,23 +78,61 @@ export function useElapsed(active: boolean): number {
   return elapsed
 }
 
-/** Loading-screen tips. Rotates on its own, pauses while you read. */
-export function TipCard() {
-  const [index, setIndex] = useState(() => Math.floor(Math.random() * tips.length))
+function shuffle<T>(items: T[]): T[] {
+  const copy = [...items]
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[copy[i], copy[j]] = [copy[j], copy[i]]
+  }
+  return copy
+}
+
+/**
+ * Loading-screen commentary. It follows the engine from step to step, giving
+ * each step's own lines first and then wandering into the general ones.
+ * A line stays up for at least a moment, and the card pauses while you read.
+ */
+export function TipCard({ stage }: { stage: StageKey | null }) {
+  const own = useMemo(() => Object.fromEntries((Object.keys(commentary) as CommentaryKey[]).map((key) => [key, key === 'any' ? [] : shuffle(commentary[key])])) as Record<CommentaryKey, string[]>, [])
+  const general = useMemo(() => shuffle([...commentary.any, dogFact]), [])
+  const cursors = useRef<Partial<Record<CommentaryKey, number>>>({})
+  const generalCursor = useRef(0)
+  const pick = useCallback((key: CommentaryKey) => {
+    const at = cursors.current[key] ?? 0
+    if (at < own[key].length) {
+      cursors.current[key] = at + 1
+      return own[key][at]
+    }
+    const line = general[generalCursor.current % general.length]
+    generalCursor.current += 1
+    return line
+  }, [own, general])
+  const wanted = commentaryKeyFor(stage)
+  const [shown, setShown] = useState(() => ({ key: wanted, line: pick(wanted) }))
   const [paused, setPaused] = useState(false)
+  const shownAt = useRef(performance.now())
+  const show = useCallback((key: CommentaryKey) => {
+    shownAt.current = performance.now()
+    setShown({ key, line: pick(key) })
+  }, [pick])
+  // A new step gets its own line once it has lasted a moment and the current
+  // line has been up long enough to read. Steps that flash past get none.
+  useEffect(() => {
+    if (wanted === shown.key) return
+    const timer = window.setTimeout(() => show(wanted), Math.max(900, 2600 - (performance.now() - shownAt.current)))
+    return () => window.clearTimeout(timer)
+  }, [wanted, shown.key, show])
   useEffect(() => {
     if (paused) return
-    const timer = window.setTimeout(() => setIndex((current) => (current + 1) % tips.length), 9000)
+    const timer = window.setTimeout(() => show(shown.key), 8000)
     return () => window.clearTimeout(timer)
-  }, [index, paused])
-  const tip = tips[index]
-  const isDogFact = tip.startsWith('Dog fact:')
-  return <aside className="tip-card" aria-label="Tips while you wait" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} onFocus={() => setPaused(true)} onBlur={() => setPaused(false)}>
+  }, [shown, paused, show])
+  const isDogFact = shown.line === dogFact
+  return <aside className="tip-card" aria-label="While you wait" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} onFocus={() => setPaused(true)} onBlur={() => setPaused(false)}>
     <div className="tip-head" data-pd-type="metadata">
-      <span>{isDogFact ? busyCopy.dogFactEyebrow : busyCopy.tipsEyebrow}</span>
-      <span>{String(index + 1).padStart(2, '0')} / {String(tips.length).padStart(2, '0')}</span>
+      <span>{isDogFact ? busyCopy.dogFactEyebrow : busyCopy.commentaryEyebrow}</span>
     </div>
-    <p className="tip-text" key={index} data-pd-type="body.default">{tip}</p>
-    <button className="tip-next" type="button" onClick={() => setIndex((current) => (current + 1) % tips.length)}><Icon name="shuffle" size={16} />{busyCopy.anotherTip}</button>
+    <p className="tip-text" key={shown.line} data-pd-type="body.default">{shown.line}</p>
+    <button className="tip-next" type="button" onClick={() => show(shown.key)}><Icon name="shuffle" size={16} />{busyCopy.another}</button>
   </aside>
 }
