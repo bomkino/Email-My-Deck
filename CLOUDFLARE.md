@@ -8,7 +8,7 @@ Email My Deck is static. It never needs Pages Functions, R2, D1, KV or an upload
 
 - `apps/main-site/email-my-deck/` holds the build, and `BUILD.json` names the commit.
 - `apps/main-site/_headers` carries the route's CSP. It is this repository's CSP plus the Google Analytics and Cloudflare Web Analytics hosts.
-- `workers/email-my-deck/` serves the page, and the nav dropdown files, from a static-assets Worker on the `pitch.dog/email-my-deck*` route. The rest of pitch.dog is untouched. Its "Deploy Email My Deck" workflow needs the `CLOUDFLARE_API_TOKEN` secret in that repository.
+- That repository's "pitch.dog website" workflow (`.github/workflows/main-site.yml`) previews every pull request and deploys `apps/main-site` to pitch.dog on merge, then checks that pitch.dog serves that commit. It needs the `CLOUDFLARE_API_TOKEN` secret in that repository.
 
 The README section "On pitch.dog" has the step-by-step.
 
