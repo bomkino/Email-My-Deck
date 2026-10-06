@@ -1,6 +1,6 @@
 # Email My Deck — handoff
 
-This is the short briefing for someone joining the project after the first build.
+This is the short briefing for someone joining the project. The tool is live in beta at `pitch.dog/email-my-deck/`.
 
 ## The actual goal
 
@@ -14,20 +14,20 @@ The product promise is intentionally narrow:
 
 ## What was built
 
-- A React/Vite static site with a small, responsive surface.
+- A pitch.dog page (`index.html`) with the React tool mounted inside it; every tool string is in `src/ui/copy.ts`.
 - A dedicated module worker for PDF inspection, lossless QPDF tidying, a pixel-based image ladder using the browser's own codecs, measured splitting, progress events and transferable output buffers (rebuilt 2026-10-06; see `src/lib/engine/`).
 - Profiles for common 25 MB mailboxes, strict 20 MB limits, conditional Gmail-to-Gmail/Workspace sending, and a custom ceiling.
-- A first-release input budget of 200 MiB on ordinary devices and 80 MiB on devices reporting 2 GiB or less.
+- An input budget of 200 MiB (about 210 MB) on ordinary devices and 80 MiB (about 84 MB) on devices reporting 2 GB of memory or less.
 - Conservative MIME/base64 headroom and decimal provider ceilings for common and strict profiles.
 - Deterministic filenames ending in `-email-version.pdf` or `-email-version-part-XX-of-YY.pdf`.
 - Local verification of page count and page geometry before offering a result.
-- Protected-feature detection through parsed PDF objects and form fields. Password-protected files, forms, signatures, attachments, and scripts are refused before rewriting.
+- Protected-feature detection through QPDF's JSON view of the file. Password-protected and permission-restricted files, forms, signatures, attachments, and scripts are refused before rewriting, each with its own message.
 - A split recovery path that rebuilds each page range from the source document, checks every part against the raw budget, and rejects a page that cannot fit by itself.
-- Clipboard failure messaging, modal keyboard handling, focus restoration, reduced-motion support, a favicon, security headers, immutable asset caching, provenance notes, and a CycloneDX SBOM.
+- Clipboard failure messaging, reduced-motion support, security headers, immutable asset caching, provenance notes, and a CycloneDX SBOM.
 
 ## Why the architecture looks this way
 
-The first question was whether the PDF should be uploaded to a server. The answer was no: browser-only processing is the clearest privacy boundary and keeps hosting costs close to zero. The tradeoff is browser memory and compute, so the first release has an explicit size budget and a worker watchdog.
+The first question was whether the PDF should be uploaded to a server. The answer was no: browser-only processing is the clearest privacy boundary and keeps hosting costs close to zero. The tradeoff is browser memory and compute, so the page has an explicit size budget and a watchdog that stops a job once it stops reporting progress.
 
 The second question was whether to optimize aggressively until a single file fits. The answer was no: presentations are judged visually, and a technically successful but unreadable deck is a false success. The app tries conservative changes first and splits when the quality floor wins.
 
@@ -54,13 +54,11 @@ node scripts/engine-check.mjs    built engine in Chromium on the corpus, with th
 npm run smoke                    real browser flow on the built site + origin privacy assertion
 ```
 
-Visual checks were run at desktop, 390 px mobile, and 320 px mobile widths across idle, ready, split, custom-target, Gmail, invalid-file, and modal states. The custom input has no horizontal overflow at 320 px. Screenshots are intentionally ignored by Git so the repository stays source-focused.
-
 ## Read these files next
 
 | File | Why it matters |
 | --- | --- |
-| `README.md` | Setup, architecture, limits, and deployment summary |
+| `README.md` | Setup, checks, architecture, limits, and how to ship to pitch.dog |
 | `DECISIONS.md` | Product and engineering tradeoffs, including rejected approaches |
 | `PRIVACY.md` | Exact browser privacy boundary and its limits |
 | `CLOUDFLARE.md` | How the pitch.dog page and the optional standalone build are deployed |
@@ -68,6 +66,9 @@ Visual checks were run at desktop, 390 px mobile, and 320 px mobile widths acros
 | `THIRD-PARTY-LICENSES.md` | QPDF and wrapper license notes |
 | `scripts/generate-corpus.mjs` | Synthetic test-deck generation |
 | `scripts/smoke.mjs` | Browser smoke/privacy test |
+| `scripts/engine-check.mjs` | Built engine on the corpus in Chromium |
+| `scripts/build-pitchdog.mjs` | The build that ships on pitch.dog |
+| `src/ui/copy.ts` | Every string the tool shows |
 | `src/lib/engine/engine.ts` | Compression order, image ladder and verification |
 | `src/lib/engine/split.ts` | Measured page-range splitting |
 | `src/lib/engine/protocol.ts` | Messages between the page and the worker |

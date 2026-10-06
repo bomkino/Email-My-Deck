@@ -16,7 +16,7 @@ These are the decisions behind the current implementation. They are here to prev
 | Protected PDFs | Refuse rewriting and ask for a flattened copy | Forms, signatures, attachments, scripts, and passwords can carry semantics that a compressor cannot promise to preserve. |
 | Size estimate | Reserve space for MIME/base64 overhead and body text; every limit in decimal MB | The attachment bytes are not the same as the transmitted message bytes. Mail providers count 25 MB as 25,000,000 bytes, so custom limits do too. |
 | Output names | `-email-version` and numbered `-part-XX-of-YY` suffixes | Users should know what a file is for before attaching it. |
-| Hosting | Static Cloudflare Pages build | No upload API, storage, database, or paid runtime is needed. |
+| Hosting | A static page on pitch.dog, shipped from `bomkino/pitchdog-cloudflare-sites`; a standalone Pages deploy runs by hand only | No upload API, storage, database, or paid runtime is needed. |
 | License | AGPL-3.0-or-later | Improvements to a hosted version remain available to the community. |
 | Home and analytics (2026-10-06) | A page on pitch.dog at `/email-my-deck/`, using the site's Google Analytics tag with session replay off | The team wanted visit counts like every other pitch.dog page. The tool sends no file, file name or contents; copy says we count visits and never claims "no analytics". |
 

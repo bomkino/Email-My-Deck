@@ -1,7 +1,8 @@
 name: CI
 
 # Tests the code and the built site on every pull request and on main.
-# It never deploys; deploy-pages.yml does that.
+# It never deploys. pitch.dog ships from bomkino/pitchdog-cloudflare-sites;
+# deploy-pages.yml is an optional standalone deploy that runs by hand.
 on:
   pull_request:
   push:
