@@ -40,6 +40,7 @@ const encoders = join(outDir, 'licenses', 'encoders')
 mkdirSync(encoders, { recursive: true })
 for (const file of readdirSync('scripts/codecs/licenses')) copyFileSync(join('scripts/codecs/licenses', file), join(encoders, file))
 copyFileSync('scripts/codecs/jpegli/LICENSES.md', join(encoders, 'jpegli-LICENSES.md'))
+copyFileSync('scripts/codecs/ssimulacra2/LICENSES.md', join(encoders, 'ssimulacra2-LICENSES.md'))
 copyFileSync('node_modules/@jsquash/resize/LICENSE', join(encoders, 'jsquash-resize-LICENSE'))
 copyFileSync('node_modules/@jsquash/resize/lib/resize/LICENSE.codec.md', join(encoders, 'resize-crate-LICENSE.md'))
 

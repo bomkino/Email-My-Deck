@@ -1,8 +1,9 @@
 /**
  * libdeflate (MIT) compiled to WebAssembly: zlib streams (PDF FlateDecode)
- * about 6–10% smaller than the browser's CompressionStream, at 6–16 MB/s.
- * Build: scripts/codecs/build-libdeflate.sh.
+ * 8–10% smaller than the browser's CompressionStream.
+ * Build: scripts/codecs/libdeflate/build.sh.
  */
+import wasmUrl from './wasm/libdeflate.wasm?url'
 
 type Exports = {
   memory: WebAssembly.Memory
@@ -12,8 +13,8 @@ type Exports = {
   emd_zlib_compress(input: number, inputLength: number, level: number, outputLength: number): number
 }
 
-/** Level 10 is where libdeflate's near-optimal parser starts: most of level 12's gain at twice its speed. */
-export const DEFLATE_LEVEL = 10
+/** libdeflate's slowest, smallest level: up to 1.5% under level 10 for about twice the time, 8 to 10% under zlib's default. */
+export const DEFLATE_LEVEL = 12
 
 export type Deflate = (data: Uint8Array) => Promise<Uint8Array>
 
@@ -44,8 +45,7 @@ export async function createDeflate(wasm: BufferSource | WebAssembly.Module, lev
 
 /** Browser loader: the wasm is a separate, cached asset fetched only when first needed. */
 export async function loadDeflate(level = DEFLATE_LEVEL): Promise<Deflate> {
-  const { default: url } = await import('./wasm/libdeflate.wasm?url')
-  const response = await fetch(url)
+  const response = await fetch(wasmUrl)
   if (!response.ok) throw new Error(`libdeflate.wasm: HTTP ${response.status}`)
   return createDeflate(await response.arrayBuffer(), level)
 }

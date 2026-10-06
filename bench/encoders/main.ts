@@ -98,11 +98,15 @@ async function timed<T>(fn: () => Promise<T>): Promise<[T, number]> {
 }
 
 const bench = {
+  /** `scorerUrl` loads another SSIMULACRA2 build (an ES module with load/score); otherwise the app's own. */
   async setup(options: { scorerUrl?: string; jpegli?: boolean }) {
     if (options.scorerUrl) {
       const module = await import(/* @vite-ignore */ options.scorerUrl)
       await module.load()
       scorer = module as Scorer
+    } else {
+      const { loadScorer } = await import('../../src/lib/encoders/scorer')
+      scorer = { score: await loadScorer() } as Scorer
     }
     if (options.jpegli) jpegli = await loadJpegli()
     return { scorer: Boolean(scorer), jpegli: Boolean(jpegli) }

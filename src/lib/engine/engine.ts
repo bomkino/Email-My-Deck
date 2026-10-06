@@ -98,7 +98,7 @@ const CALIBRATION_SHARE = 0.15
 const CALIBRATION_MAX_IMAGES = 8
 const PAGE_TOLERANCE = 0.5
 const HEARTBEAT_MS = 400
-/** Rough codec speed, used only to keep the bar moving while a big image is in flight. */
+/** Rough codec speed until this deck's own images have been timed; used only to keep the bar moving while a big image is in flight. */
 const PIXELS_PER_MS = 25_000
 /** Decoded pixels allowed in flight at once (about 4 bytes each, often twice), so phones are not run out of memory. */
 const MAX_PIXELS_IN_FLIGHT = 64_000_000
@@ -258,6 +258,9 @@ export async function compressDocument(input: Uint8Array, budget: number, deps: 
   const codec = deps.codec
   const concurrency = Math.max(1, codec.concurrency ?? 1)
   let donePixels = 0
+  // Codec speed as measured on this deck (pixels × outputs per ms, per image), so a slow encoder or device still sees the bar creep.
+  let pixelsPerMs = PIXELS_PER_MS
+  let timedImages = 0
 
   /** Decode each image once (several at a time) and encode it at the given rungs. */
   const encodeImages = async (subset: ImagePlan[], rungs: number[], label?: string) => {
@@ -270,7 +273,7 @@ export async function compressDocument(input: Uint8Array, budget: number, deps: 
       const time = now()
       let partial = 0
       for (const [plan, startedAt] of inFlight) {
-        const expectedMs = Math.max(300, (plan.pixels * (1 + rungs.length)) / PIXELS_PER_MS)
+        const expectedMs = Math.max(300, (plan.pixels * (1 + rungs.length)) / pixelsPerMs)
         partial += plan.pixels * 0.9 * (1 - Math.exp(-(time - startedAt) / expectedMs))
       }
       progress.update((donePixels + partial) / totalPixels)
@@ -281,11 +284,18 @@ export async function compressDocument(input: Uint8Array, budget: number, deps: 
         await mapLimit(batch, concurrency, async (plan) => {
           const source = sources.get(plan.image.ref)
           sources.delete(plan.image.ref)
-          inFlight.set(plan, now())
+          const startedAt = now()
+          inFlight.set(plan, startedAt)
           try {
             if (source) await encodeImage(codec, session, plan, source, rungs, outputs, calibration)
           } finally {
             inFlight.delete(plan)
+          }
+          const tookMs = now() - startedAt
+          if (source && tookMs > 0) {
+            const measured = (plan.pixels * (1 + rungs.length)) / tookMs
+            timedImages += 1
+            pixelsPerMs = timedImages === 1 ? measured : pixelsPerMs * 0.7 + measured * 0.3
           }
           const tried = attempted.get(plan.image.ref) ?? new Set<number>()
           for (const rung of rungs) tried.add(rung)

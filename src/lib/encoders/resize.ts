@@ -6,6 +6,7 @@
  * on light backgrounds comes out visibly thinner.
  */
 import initResize, { resize as wasmResize } from '@jsquash/resize/lib/resize/pkg/squoosh_resize.js'
+import resizeUrl from '@jsquash/resize/lib/resize/pkg/squoosh_resize_bg.wasm?url'
 
 /** Index of lanczos3 in the crate's filter list (triangle, catrom, mitchell, lanczos3). */
 const LANCZOS3 = 3
@@ -19,7 +20,6 @@ export function lanczos3(pixels: ImageData, width: number, height: number): Imag
 
 /** Browser loader: the wasm is a separate asset fetched when first needed. */
 export async function loadResize(): Promise<Resize> {
-  const { default: url } = await import('@jsquash/resize/lib/resize/pkg/squoosh_resize_bg.wasm?url')
-  await initResize(url)
+  await initResize(resizeUrl)
   return async (pixels, width, height) => lanczos3(pixels, width, height)
 }

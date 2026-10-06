@@ -162,14 +162,23 @@ export function createBrowserCodec(overrides: EncoderOverrides = {}): ImageCodec
     async encode(source, outputs) {
       const bitmap = await decode(source)
       const surfaces: Surface[] = [{ image: bitmap, width: bitmap.width, height: bitmap.height, canvas: null }]
-      // Full-size pixels for an override resizer, read once per image.
+      // Pixels for an override resizer, read once per image: full size, or for a
+      // huge photo twice the largest output, halved down by canvas first so the
+      // readback and the resizer's copies stay a bounded size.
       let fullPixels: ImageData | null = null
       const full = () => {
         if (!fullPixels) {
-          const canvas = new OffscreenCanvas(bitmap.width, bitmap.height)
-          const context = context2d(canvas, true)
-          context.drawImage(bitmap, 0, 0)
-          fullPixels = context.getImageData(0, 0, bitmap.width, bitmap.height)
+          const largest = outputs.reduce((a, b) => (b.width * b.height > a.width * a.height ? b : a))
+          const width = Math.min(bitmap.width, largest.width * 2)
+          const height = Math.min(bitmap.height, largest.height * 2)
+          if (width === bitmap.width && height === bitmap.height) {
+            const canvas = new OffscreenCanvas(width, height)
+            const context = context2d(canvas, true)
+            context.drawImage(bitmap, 0, 0)
+            fullPixels = context.getImageData(0, 0, width, height)
+          } else {
+            fullPixels = context2d(drawScaled(surfaces, width, height, true), true).getImageData(0, 0, width, height)
+          }
         }
         return fullPixels
       }

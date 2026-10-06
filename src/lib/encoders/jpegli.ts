@@ -1,11 +1,13 @@
 /**
  * Google's jpegli (BSD-3-Clause) compiled to WebAssembly: a libjpeg-compatible
  * encoder with adaptive quantisation, so a JPEG looks as good as the browser's
- * at fewer bytes. Writes plain YCbCr or gray baseline JPEGs with no APP
- * markers, which is what a PDF's DCTDecode wants.
- * Build: scripts/codecs/build-jpegli.sh.
+ * at fewer bytes. Writes plain YCbCr or gray JPEGs (baseline or progressive,
+ * which DCTDecode has read since PDF 1.3) with no APP markers to second-guess.
+ * Build: scripts/codecs/jpegli/build.sh.
  */
 import type { JpegliEmscriptenModule } from './wasm/jpegli.js'
+import plainUrl from './wasm/jpegli-nosimd.wasm?url'
+import simdUrl from './wasm/jpegli.wasm?url'
 
 export type JpegliSettings = {
   /** libjpeg-style quality, 1–100. Ignored when `distance` is set. */
@@ -65,11 +67,7 @@ export function wasmSimdSupported(): boolean {
 
 /** Browser loader: the glue and the right wasm (SIMD or not) are separate assets, fetched when first needed. */
 export async function loadJpegli(): Promise<Jpegli> {
-  const [{ default: factory }, { default: simdUrl }, { default: plainUrl }] = await Promise.all([
-    import('./wasm/jpegli.js'),
-    import('./wasm/jpegli.wasm?url'),
-    import('./wasm/jpegli-nosimd.wasm?url'),
-  ])
+  const { default: factory } = await import('./wasm/jpegli.js')
   const url = wasmSimdSupported() ? simdUrl : plainUrl
   return wrapJpegli(await factory({ locateFile: () => url }))
 }
