@@ -31,7 +31,7 @@ Every photo is now written by jpegli, Google's JPEG encoder compiled to WebAssem
 
 ### Engine: flatten (the nuke)
 
-When a deck can't fit one email, the page can now offer a third way: turn every slide into one picture and squeeze those. It only runs when the visitor asks for it. Text stops being searchable and links stop working, but the deck stays one file. In Chrome, the 24 MB Figma deck flattens to one 13.9 MB file for strict 20 MB mailboxes with every slide still 2400 px across, in about 45 s. At a 6 MB limit it still fits, with no slide below 1216 px.
+When a deck can't fit one email, the page can now offer a third way: turn every slide into one picture and squeeze those. It only runs when the visitor asks for it. Text stops being searchable and links stop working, but the deck stays one file. In Chrome, the 24 MB Figma deck flattens to one 13.9 MB file for strict 20 MB mailboxes with every slide still 2400 px across, in about 80 s. At a 6 MB limit it still fits, with no slide below 1216 px.
 
 - PDF.js draws each slide at 2400 px in the PDF worker, on its own nested worker for parsing. Fonts are drawn as outlines. The standard fonts, CMaps and the JPEG 2000 and JBIG2 decoders are bundled files, fetched only when a deck needs them, so nothing leaves the browser. They are loaded only when someone flattens.
 - Each slide is re-saved at eight rungs, from 2400 px at JPEG quality 82 down to 1024 px at 50, on a few nested workers while the next slide is drawn. Full size at low quality comes before smaller sizes: on a screen it reads sharper for the same bytes.
@@ -40,6 +40,7 @@ When a deck can't fit one email, the page can now offer a third way: turn every 
 - No slide goes below a clarity floor (0.7, set by eye: 8 pt text on a 16:9 slide still reads cleanly at screen size). When even that doesn't fit, the result comes back over budget (`fits: false`) with the lightest size reached, instead of as mush.
 - `compress` takes `mode: 'flatten'`, and the result is `candidate.engine: 'flattened'` with `receipt.flatten` (`pages`, `longEdgePx` and `jpegQuality` of the lightest slide, and the lowest `clarity`). Progress has a `flatten` stage with slide counts. `ENGINE_FEATURES.flatten` is on.
 - Protected PDFs (forms, signatures, attachments, scripts, restrictions) are still refused, flattened or not.
+- Each rung is written twice, by the browser's JPEG encoder and by jpegli, and both versions are scored. A slide takes whichever reads as clearly for fewer bytes, so the room saved buys sharper slides elsewhere. In Chrome at an 8 MB limit, the files weigh the same but are sharper: the 24 MB Figma deck keeps more pixels on 36 of its 66 slides and none goes below 1728 px across (was 1440). The Keynote-style deck's least clear slide rises from 0.82 to 0.88, and the 157 MB deck's lightest slide goes from 1024 px to 1216. No slide anywhere came out smaller. At 20 MB most decks were already at full size and barely change. Flattening takes about twice as long (the Figma deck at 8 MB: 43 s to 90 s). If jpegli can't load, or fails on a slide, that slide uses the browser's version alone, as before.
 
 ### Engine: squeeze before splitting
 
