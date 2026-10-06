@@ -81,6 +81,11 @@ export class ProgressReporter {
     this.push(within, extra, false)
   }
 
+  /** Say the job is still going, without moving the bar: for waits that report nothing themselves. */
+  keepAlive(): void {
+    this.push(0, {}, false)
+  }
+
   private push(within: number, extra: { page?: number; pages?: number }, force: boolean): void {
     const clamped = Math.min(1, Math.max(0, Number.isFinite(within) ? within : 0))
     const next = this.band[0] + (this.band[1] - this.band[0]) * clamped

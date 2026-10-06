@@ -256,6 +256,23 @@ describe('progress', () => {
     new ProgressReporter((event) => split.push(event), 0.95, () => time).enter('split')
     expect(split[0]).toMatchObject({ stage: 'split', fraction: 0.95 })
   })
+
+  it('keeps a quiet wait alive without moving the bar', () => {
+    let time = 0
+    const events: ProgressEvent[] = []
+    const progress = new ProgressReporter((event) => events.push(event), 0, () => time)
+    progress.enter('photos')
+    time += 400
+    progress.update(0.5)
+    time += 400
+    progress.keepAlive()
+    progress.keepAlive() // throttled: same instant
+    time += 400
+    progress.keepAlive()
+    expect(events.length).toBe(4)
+    expect(new Set(events.slice(1).map((event) => event.fraction)).size).toBe(1)
+    expect(events.slice(1).every((event) => event.stage === 'photos')).toBe(true)
+  })
 })
 
 describe('mapLimit', () => {
