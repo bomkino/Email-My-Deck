@@ -50,8 +50,8 @@ npm run build:pitchdog   # builds dist-pitchdog/ with base /email-my-deck/
 To ship a change to pitch.dog:
 
 1. Merge it here, then run `npm run build:pitchdog` on a clean checkout. `BUILD.json` records the commit, and `licenses/` carries the AGPL text, third-party notices and provenance.
-2. In `bomkino/pitchdog-cloudflare-sites`, replace `apps/main-site/email-my-deck/` with `dist-pitchdog/`, run `node scripts/add-free-stuff-nav.mjs`, and merge.
-3. Run that repository's "Deploy Email My Deck" workflow. It serves the page from its own Worker route, so the rest of pitch.dog is untouched.
+2. In `bomkino/pitchdog-cloudflare-sites`, replace `apps/main-site/email-my-deck/` with `dist-pitchdog/`, run `node scripts/add-free-stuff-nav.mjs`, and open a pull request. It gets a preview at `https://pr-<number>.pitchdog-website.pages.dev`.
+3. Merge it. That repository's "pitch.dog website" workflow deploys `apps/main-site` to pitch.dog and then checks that pitch.dog serves the new commit.
 
 ## Architecture
 

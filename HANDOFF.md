@@ -76,7 +76,7 @@ npm run smoke                    real browser flow on the built site + origin pr
 
 ## Where it lives
 
-The tool's home is `pitch.dog/email-my-deck/`, a normal pitch.dog page marked beta. It ships from `bomkino/pitchdog-cloudflare-sites` on its own Worker route; see [CLOUDFLARE.md](CLOUDFLARE.md). The page counts visits with pitch.dog's Google Analytics tag, and never sends the file, its name or its contents.
+The tool's home is `pitch.dog/email-my-deck/`, a normal pitch.dog page marked beta. It ships from `bomkino/pitchdog-cloudflare-sites` with the rest of the main site; see [CLOUDFLARE.md](CLOUDFLARE.md). The page counts visits with pitch.dog's Google Analytics tag, and never sends the file, its name or its contents.
 
 Still open:
 
