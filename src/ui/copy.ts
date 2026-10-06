@@ -262,7 +262,7 @@ export const errorCopy: Record<ErrorKind, { title: string; body: string }> = {
   },
   engine: {
     title: 'Something in the engine tripped.',
-    body: 'Your file is fine and still on your device. Reload the page and try again, or try Chrome or Brave.',
+    body: 'Your file is fine and still on your device. Reload the page and try again, or try Chrome or Brave. If it keeps happening, tell us at hello@pitch.dog.',
   },
   read: {
     title: 'We couldn’t open that file.',
@@ -270,7 +270,7 @@ export const errorCopy: Record<ErrorKind, { title: string; body: string }> = {
   },
   unknown: {
     title: 'We couldn’t make a version we’d send.',
-    body: 'Your original is untouched and still on your device.',
+    body: 'Your original is untouched and still on your device. If it keeps happening, tell us at hello@pitch.dog.',
   },
 }
 

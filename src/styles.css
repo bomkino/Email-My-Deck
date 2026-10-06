@@ -96,6 +96,8 @@ body.mobile-menu-open { overflow: hidden; }
 .text-button { padding: 4px 0; border: 0; background: none; color: var(--ink); text-decoration: underline; text-decoration-color: var(--rule-strong); text-underline-offset: 4px; cursor: pointer; }
 .icon-button { width: 40px; height: 40px; display: grid; place-items: center; flex: none; border: 1px solid var(--rule); background: transparent; color: inherit; cursor: pointer; }
 .badge { margin-left: 8px; padding: 3px 6px; border-radius: 2px; background: var(--mint); color: var(--mint-ink); font: 600 .62rem/1 var(--mono); font-style: normal; letter-spacing: .05em; text-transform: uppercase; vertical-align: .15em; }
+.hero-locator .badge--beta { margin: 0; color: var(--mint-ink); text-decoration: none; }
+.beta-note { color: var(--muted); }
 .chip { padding: 6px 9px; background: var(--mint); color: var(--mint-ink); font: 600 .72rem/1 var(--mono); letter-spacing: .05em; text-transform: uppercase; }
 
 @media (hover: hover) and (pointer: fine) {
