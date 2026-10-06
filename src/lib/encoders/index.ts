@@ -5,10 +5,10 @@
  * only when a deck needs images rewritten.
  * Benchmarks and how each setting was chosen: bench/README.md.
  */
-import { browserCodec, createBrowserCodec, type EncoderOverrides, type ImageCodec } from '../engine/codec'
+import { browserCodec, browserJpeg, createBrowserCodec, type EncoderOverrides, type ImageCodec } from '../engine/codec'
 import { loadDeflate } from './deflate'
 import { loadJpegli, type Jpegli, type JpegliSettings } from './jpegli'
-import { cropTile, decodeTiles, judge, pickTiles, searchDistance, type Score } from './looks'
+import { cropTile, decodeTiles, fitUnder, judge, pickTiles, searchDistance, type Score, type Tile } from './looks'
 import { loadResize } from './resize'
 import { loadScorer } from './scorer'
 
@@ -57,30 +57,57 @@ const MIN_CHECKED_PIXELS = 96 * 96
 /** A best score this far under the target means the check itself is off (an odd decoder, say), not the JPEG. */
 const IMPLAUSIBLE = 15
 
+export type JpegWriterOptions = {
+  /** SSIMULACRA2; without it every JPEG gets the table's distance. */
+  score?: Score
+  /** The browser's own JPEG of the same pixels and quality. No JPEG comes out bigger than it. */
+  baseline?: (samples: Uint8Array, width: number, height: number, components: 1 | 3, quality: number) => Promise<Uint8Array>
+  /** Decodes a candidate's tiles; the browser's decoder unless a test swaps it. */
+  decode?: (bytes: Uint8Array, tiles: Tile[], channels: 1 | 3) => Promise<Uint8Array[]>
+}
+
 /**
- * JPEG writer: with a scorer, each image gets the lightest jpegli distance
- * that still looks right at its rung (see looks.ts); without one, or if the
- * check fails, the table's distance.
+ * JPEG writer. Each image gets the lightest jpegli distance that still looks
+ * right at its rung (see looks.ts), and never more bytes than the browser's
+ * own JPEG of it at the same quality. When the look costs more than that (a
+ * busy screenshot, say), it gets the best look that fits in those bytes, or
+ * the browser's JPEG itself if that looks better. Without a scorer, or if the
+ * check fails, the table's distance, under the same cap.
  */
-export function jpegWriter(jpegli: Jpegli, score?: Score): NonNullable<EncoderOverrides['writeJpeg']> {
+export function jpegWriter(jpegli: Jpegli, options: JpegWriterOptions = {}): NonNullable<EncoderOverrides['writeJpeg']> {
+  const { score, baseline, decode = decodeTiles } = options
   return async (samples, width, height, components, quality) => {
     const { target, distance } = looksFor(quality)
     const encodeAt = (at: number) => jpegli.encode(samples, width, height, components, jpegliSettingsFor(quality, at))
-    if (!score || width < 16 || height < 16 || width * height < MIN_CHECKED_PIXELS) return encodeAt(distance)
+    let today: Uint8Array | null = null
+    if (baseline) {
+      try {
+        today = await baseline(samples, width, height, components, quality)
+      } catch {
+        today = null
+      }
+    }
+    const cap = today?.byteLength ?? Infinity
+    const unchecked = () => {
+      const fixed = encodeAt(distance)
+      return today && fixed.byteLength > cap ? today : fixed
+    }
+    if (!score || width < 16 || height < 16 || width * height < MIN_CHECKED_PIXELS) return unchecked()
     try {
       const tiles = pickTiles(samples, width, height, components)
       const reference = tiles.map((tile) => cropTile(samples, width, components, tile))
-      const found = await searchDistance(
-        encodeAt,
-        async (bytes) => judge(score, reference, await decodeTiles(bytes, tiles, components), tiles, components),
-        target,
-        distance,
-        { tolerance: 0.5, maxSteps: 7 },
-      )
-      return found.score >= target - IMPLAUSIBLE ? found.bytes : encodeAt(distance)
+      const scoreOf = async (bytes: Uint8Array) => judge(score, reference, await decode(bytes, tiles, components), tiles, components)
+      const found = await searchDistance(encodeAt, scoreOf, target, distance, { tolerance: 0.5, maxSteps: 7 })
+      if (found.score >= target && found.bytes.byteLength <= cap) return found.bytes
+      if (!today) return found.score >= target - IMPLAUSIBLE ? found.bytes : encodeAt(distance)
+      // Looking right would cost more than the browser's JPEG: the best look within its bytes, or the browser's JPEG itself.
+      const fitted = found.bytes.byteLength <= cap ? found : fitUnder(encodeAt, cap, found)
+      if (!fitted) return today
+      const fittedScore = fitted === found ? found.score : await scoreOf(fitted.bytes)
+      return fittedScore >= (await scoreOf(today)) ? fitted.bytes : today
     } catch (error) {
       console.warn('Email My Deck wrote one JPEG without the look check', error)
-      return encodeAt(distance)
+      return unchecked()
     }
   }
 }
@@ -93,7 +120,7 @@ export async function loadEncoders(): Promise<EncoderOverrides> {
     return undefined
   })
   const [jpegli, deflate, resize, score] = await Promise.all([loadJpegli(), loadDeflate(), loadResize(), scorer])
-  return { writeJpeg: jpegWriter(jpegli, score), deflate, resize }
+  return { writeJpeg: jpegWriter(jpegli, { score, baseline: browserJpeg }), deflate, resize }
 }
 
 /**

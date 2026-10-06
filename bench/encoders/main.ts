@@ -7,6 +7,8 @@
 import mozEncode from '@jsquash/jpeg/encode'
 import resize from '@jsquash/resize'
 import { loadJpegli, type Jpegli } from '../../src/lib/encoders/jpegli'
+import { jpegWriter } from '../../src/lib/encoders/index'
+import { browserJpeg } from '../../src/lib/engine/codec'
 
 type Rgba = { data: Uint8ClampedArray; width: number; height: number }
 type Prepared = { rgba: Rgba; rgb: Uint8Array; canvas: OffscreenCanvas }
@@ -200,8 +202,9 @@ const bench = {
  * today's canvas JPEG and its worst-tile score; then, when `targets` gives the
  * rung's target, the Lanczos + jpegli search result. Whole-image scores are
  * added for rungs up to `wholeUpTo` px so the tile judgement can be checked.
+ * `app` adds what the app itself writes (`app*` columns).
  */
-;(globalThis as unknown as { calibrate: unknown }).calibrate = async (options: { url: string; name: string; rungs: Array<[number, number]>; targets?: Record<string, number>; guesses?: Record<string, number>; wholeUpTo?: number }) => {
+;(globalThis as unknown as { calibrate: unknown }).calibrate = async (options: { url: string; name: string; rungs: Array<[number, number]>; targets?: Record<string, number>; guesses?: Record<string, number>; wholeUpTo?: number; app?: boolean }) => {
   const { pickTiles, cropTile, decodeTiles, judge, searchDistance } = await import('../../src/lib/encoders/looks')
   const { lanczos3 } = await import('../../src/lib/encoders/resize')
   const initResize = (await import('@jsquash/resize/lib/resize/pkg/squoosh_resize.js')).default
@@ -243,6 +246,17 @@ const bench = {
       )
       Object.assign(row, { target, newBytes: found.bytes.byteLength, newDistance: found.distance, newTile: found.score, steps: found.steps, searchMs: performance.now() - started })
       if (longEdge <= (options.wholeUpTo ?? 0)) row.newWhole = score(rgb, await decodeRgb(found.bytes), width, height, 3)
+    }
+    if (options.app) {
+      // What the app writes: its own targets, held to the browser's bytes for the same pixels.
+      const resized = scale < 1 ? lanczos3(full, width, height) : full
+      const rgb = rgbOf(resized.data)
+      const tiles = pickTiles(rgb, width, height, 3)
+      const reference = tiles.map((tile) => cropTile(rgb, width, 3, tile))
+      const started = performance.now()
+      const bytes = await jpegWriter(jpegli, { score, baseline: browserJpeg })(rgb, width, height, 3, quality)
+      Object.assign(row, { appBytes: bytes.byteLength, appTile: judge(score, reference, await decodeTiles(bytes, tiles, 3), tiles, 3), appMs: performance.now() - started })
+      if (longEdge <= (options.wholeUpTo ?? 0)) row.appWhole = score(rgb, await decodeRgb(bytes), width, height, 3)
     }
     rows.push(row)
   }

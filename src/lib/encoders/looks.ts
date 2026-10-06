@@ -180,3 +180,32 @@ export async function searchDistance(
   const chosen = passing.length ? passing.reduce((a, b) => (b.bytes.byteLength < a.bytes.byteLength ? b : a)) : attempts.reduce((a, b) => (b.score > a.score ? b : a))
   return { ...chosen, steps: attempts.length }
 }
+
+/**
+ * The best-looking (smallest) distance whose JPEG is no bigger than `cap`
+ * bytes, searching up from `start`, which is over it. Bytes fall roughly as a
+ * power of distance, so each step aims along the last two points in log–log.
+ * Null when even `max` can't get under the cap.
+ */
+export function fitUnder(encode: (distance: number) => Uint8Array, cap: number, start: { distance: number; bytes: Uint8Array }, options: { maxSteps?: number; max?: number } = {}): { distance: number; bytes: Uint8Array } | null {
+  const { maxSteps = 8, max = 25 } = options
+  let over = start
+  let under: { distance: number; bytes: Uint8Array } | null = null
+  for (let step = 0; step < maxSteps; step += 1) {
+    let next: number
+    if (under) {
+      const t = Math.log(over.bytes.byteLength / cap) / Math.log(over.bytes.byteLength / under.bytes.byteLength)
+      next = Math.exp(Math.log(over.distance) + t * Math.log(under.distance / over.distance))
+      if (!(next > over.distance && next < under.distance)) next = Math.sqrt(over.distance * under.distance)
+    } else {
+      if (over.distance >= max) break
+      next = Math.min(max, over.distance * Math.max(1.1, over.bytes.byteLength / cap))
+    }
+    const bytes = encode(next)
+    if (bytes.byteLength <= cap) under = { distance: next, bytes }
+    else over = { distance: next, bytes }
+    // Close enough under the cap, or the bracket is too narrow to matter.
+    if (under && (under.bytes.byteLength >= cap * 0.97 || under.distance / over.distance < 1.02)) break
+  }
+  return under
+}

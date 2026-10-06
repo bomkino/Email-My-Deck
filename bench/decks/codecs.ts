@@ -1,7 +1,8 @@
 // Codec kinds the deck bench can run: "canvas" (the browser's own encoders),
 // "wasm" (exactly what the app loads) or replacements from src/lib/encoders,
-// alone or together ("jpegli+lanczos+deflate"; "looks" adds the look check to jpegli).
-import { browserCodec, createBrowserCodec, type EncoderOverrides, type ImageCodec } from '../../src/lib/engine/codec'
+// alone or together ("jpegli+lanczos+deflate"; "looks" adds the look check to
+// jpegli, "capped" the cap at the browser's own bytes).
+import { browserCodec, browserJpeg, createBrowserCodec, type EncoderOverrides, type ImageCodec } from '../../src/lib/engine/codec'
 import { loadDeflate } from '../../src/lib/encoders/deflate'
 import { jpegWriter, loadEncoders } from '../../src/lib/encoders/index'
 import { loadJpegli } from '../../src/lib/encoders/jpegli'
@@ -15,8 +16,8 @@ export async function codecFor(kind: string): Promise<ImageCodec> {
   const overrides: EncoderOverrides = {}
   const parts = kind.split('+')
   for (const part of parts) {
-    if (part === 'jpegli') overrides.writeJpeg = jpegWriter(await loadJpegli(), parts.includes('looks') ? await loadScorer() : undefined)
-    else if (part === 'looks') continue
+    if (part === 'jpegli') overrides.writeJpeg = jpegWriter(await loadJpegli(), { score: parts.includes('looks') ? await loadScorer() : undefined, baseline: parts.includes('capped') ? browserJpeg : undefined })
+    else if (part === 'looks' || part === 'capped') continue
     else if (part === 'mozjpeg') overrides.writeJpeg = await loadMozjpeg()
     else if (part === 'lanczos') overrides.resize = await loadResize()
     else if (part === 'deflate') overrides.deflate = await loadDeflate()

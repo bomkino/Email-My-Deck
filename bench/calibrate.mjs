@@ -1,6 +1,6 @@
 // Calibrate ladder targets (canvas worst-tile scores) and check the jpegli search, in Chromium.
 // Usage: node bench/calibrate.mjs <out.jsonl> <config.json> <image>...
-// config.json: { rungs: [[longEdge, quality]...], targets?: {quality: score}, guesses?: {quality: distance}, wholeUpTo?, scorerPath? } (scorerPath: another SSIMULACRA2 build; default the app's)
+// config.json: { rungs: [[longEdge, quality]...], targets?: {quality: score}, guesses?: {quality: distance}, wholeUpTo?, app?, scorerPath? } (scorerPath: another SSIMULACRA2 build; default the app's)
 import { createServer } from 'vite'
 import { chromium } from 'playwright-core'
 import { appendFile, readFile, writeFile } from 'node:fs/promises'
@@ -20,7 +20,7 @@ console.log('setup', await page.evaluate((options) => globalThis.bench.setup(opt
 await writeFile(outPath, '')
 for (const file of images) {
   const started = Date.now()
-  const rows = await page.evaluate((options) => globalThis.calibrate(options), { url: `/@fs${file}`, name: basename(file), rungs: config.rungs, targets: config.targets, guesses: config.guesses, wholeUpTo: config.wholeUpTo })
+  const rows = await page.evaluate((options) => globalThis.calibrate(options), { url: `/@fs${file}`, name: basename(file), rungs: config.rungs, targets: config.targets, guesses: config.guesses, wholeUpTo: config.wholeUpTo, app: config.app })
   await appendFile(outPath, rows.map((row) => JSON.stringify(row)).join('\n') + '\n')
   console.log(basename(file), ((Date.now() - started) / 1000).toFixed(1), 's')
 }

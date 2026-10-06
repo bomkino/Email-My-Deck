@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { createDeflate } from '../src/lib/encoders/deflate'
 import { jpegliSettingsFor, jpegWriter, JPEGLI_LOOKS, looksFor } from '../src/lib/encoders/index'
 import { wrapJpegli, wasmSimdSupported } from '../src/lib/encoders/jpegli'
-import { cropTile, judge, pickTiles, searchDistance, TILE } from '../src/lib/encoders/looks'
+import { cropTile, judge, pickTiles, searchDistance, TILE, type Tile } from '../src/lib/encoders/looks'
 import createJpegliModule from '../src/lib/encoders/wasm/jpegli.js'
 import * as ssimulacra2 from '../src/lib/encoders/wasm/ssimulacra2.js'
 import { readJpegInfo } from '../src/lib/engine/jpeg'
@@ -155,11 +155,41 @@ describe('the look check', () => {
     const write = jpegWriter(jpegli)
     const samples = scene(320, 200, 3)
     expect(await write(samples, 320, 200, 3, 0.8)).toEqual(jpegli.encode(samples, 320, 200, 3, jpegliSettingsFor(0.8)))
-    const checked = jpegWriter(jpegli, () => {
-      throw new Error('should not be scored')
+    const checked = jpegWriter(jpegli, {
+      score: () => {
+        throw new Error('should not be scored')
+      },
     })
     const tiny = scene(40, 30, 3)
     expect(await checked(tiny, 40, 30, 3, 0.8)).toEqual(jpegli.encode(tiny, 40, 30, 3, jpegliSettingsFor(0.8)))
+  })
+
+  it('never writes more bytes than the browser would have, and keeps the better look within them', async () => {
+    const jpegli = wrapJpegli(await createJpegliModule({ wasmBinary: wasm('jpegli.wasm') }))
+    await ssimulacra2.load(wasm('ssimulacra2.wasm'))
+    const width = 900
+    const height = 600
+    const samples = scene(width, height, 3)
+    const decode = async (bytes: Uint8Array, tiles: Tile[], channels: 1 | 3) => {
+      const decoded = decodeSamples(bytes, channels)
+      return tiles.map((tile) => cropTile(decoded, width, channels, tile))
+    }
+    const free = await jpegWriter(jpegli, { score: ssimulacra2.score, decode })(samples, width, height, 3, 0.85)
+    // A browser JPEG well under what the look needs: the writer stays within its bytes.
+    const tight = jpegli.encode(samples, width, height, 3, { distance: 3 })
+    expect(tight.byteLength).toBeLessThan(free.byteLength)
+    const capped = await jpegWriter(jpegli, { score: ssimulacra2.score, decode, baseline: async () => tight })(samples, width, height, 3, 0.85)
+    expect(capped.byteLength).toBeLessThanOrEqual(tight.byteLength)
+    expect(capped.byteLength).toBeGreaterThan(tight.byteLength * 0.9)
+    // A roomy one changes nothing.
+    const roomy = new Uint8Array(free.byteLength * 2)
+    expect(await jpegWriter(jpegli, { score: ssimulacra2.score, decode, baseline: async () => roomy })(samples, width, height, 3, 0.85)).toEqual(free)
+    // When the browser's JPEG looks better than anything jpegli fits in its bytes, it is kept.
+    const perfectForToday = async (bytes: Uint8Array, wanted: Tile[]) => (bytes === tight ? wanted.map((tile) => cropTile(samples, width, 3, tile)) : wanted.map((tile) => new Uint8Array(tile.width * tile.height * 3)))
+    expect(await jpegWriter(jpegli, { score: ssimulacra2.score, decode: perfectForToday, baseline: async () => tight })(samples, width, height, 3, 0.85)).toBe(tight)
+    // Without a scorer the table's distance is still held to the cap.
+    const small = jpegli.encode(samples, width, height, 3, { distance: 6 })
+    expect(await jpegWriter(jpegli, { baseline: async () => small })(samples, width, height, 3, 0.85)).toBe(small)
   })
 })
 

@@ -111,6 +111,18 @@ export type EncoderOverrides = {
   resize?: (pixels: ImageData, width: number, height: number) => Promise<ImageData>
 }
 
+/**
+ * The JPEG the browser's own encoder writes for these samples (gray through
+ * the engine's one-channel encoder): what an image cost before the
+ * WebAssembly encoders, so they can promise never to cost more.
+ */
+export async function browserJpeg(samples: Uint8Array, width: number, height: number, components: 1 | 3, quality: number): Promise<Uint8Array> {
+  if (components === 1) return encodeGrayJpeg(samples, width, height, quality)
+  const canvas = new OffscreenCanvas(width, height)
+  context2d(canvas, false).putImageData(rawToImageData({ kind: 'raw', bytes: samples, width, height, components }), 0, 0)
+  return (await canvasJpeg(canvas, { width, height, format: 'jpeg', quality })).bytes
+}
+
 async function canvasJpeg(canvas: OffscreenCanvas, output: CodecOutput): Promise<CodecResult> {
   const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: output.quality ?? 0.82 })
   if (blob.type !== 'image/jpeg') throw new Error('This browser cannot write JPEG images.')
