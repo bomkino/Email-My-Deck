@@ -50,6 +50,9 @@ function row(service: Service, rank: number): string {
 export function renderSendGuide(): string {
   const byId = new Map(SERVICES.map((service) => [service.id, service]))
   const copy = guideCopy
+  const ours = byId.get(PICKS.find((pick) => pick.for === 'all')!.service)!
+  // Without JavaScript the whole guide shows. picker.ts folds everything after
+  // the lead behind the toggle and opens it again for links to #send-a-link.
   return `<section class="section send" id="send-a-link" aria-labelledby="send-title">
   <div class="send-top">
     <div class="section-head">
@@ -58,6 +61,17 @@ export function renderSendGuide(): string {
     </div>
     <div class="section-body">
       <p data-pd-type="lead.section">${inline(copy.lead)}</p>
+      <button class="send-toggle" type="button" aria-expanded="true" aria-controls="send-more" data-send-toggle hidden>
+        <span class="send-toggle-label" data-pd-type="title.functional">${escape(copy.more(SERVICES.length))}</span>
+        <span class="send-toggle-meta" data-pd-type="body.small">${escape(copy.moreMeta(ours.name))}</span>
+        ${caretIcon}
+      </button>
+    </div>
+  </div>
+
+  <div class="send-more" id="send-more" data-send-more>
+  <div class="send-intro">
+    <div class="section-body">
       ${copy.body.map((paragraph) => `<p data-pd-type="body.reading">${inline(paragraph)}</p>`).join('\n      ')}
     </div>
   </div>
@@ -107,5 +121,7 @@ ${SERVICES.map((service, index) => row(service, index + 1)).join('\n')}
 
   <p class="send-leftout" data-pd-type="body.small">${escape(copy.leftOut)} ${LEFT_OUT.map((item, index) => `${index === LEFT_OUT.length - 1 ? 'and ' : ''}${external(item.url, item.name)}, which ${escape(item.why)}`).join('; ')}.</p>
   <p class="send-fineprint" data-pd-type="body.small">${inline(copy.fineprint(CHECKED_TEXT))} <a href="mailto:hello@pitch.dog?subject=Email%20My%20Deck%20link%20guide">${escape(copy.fineprintLink)}</a></p>
+  <button class="text-button send-fold" type="button" aria-controls="send-more" data-send-fold hidden data-pd-type="body.small">${escape(copy.fold)}</button>
+  </div>
 </section>`
 }

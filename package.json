@@ -14,15 +14,14 @@
     "build:pitchdog": "tsc -b && node scripts/build-pitchdog.mjs"
   },
   "dependencies": {
+    "@jsquash/resize": "2.1.1",
     "@neslinesli93/qpdf-wasm": "^0.3.0",
+    "pdfjs-dist": "6.4.299",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },
   "devDependencies": {
-    "@jsquash/jpeg": "^1.6.0",
-    "@jsquash/oxipng": "^2.3.0",
-    "@jsquash/png": "^3.1.1",
-    "@jsquash/resize": "^2.1.1",
+    "@jsquash/jpeg": "1.6.0",
     "@types/react": "^19.1.10",
     "@types/react-dom": "^19.1.7",
     "@vitejs/plugin-react": "^5.0.4",

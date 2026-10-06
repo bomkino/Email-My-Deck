@@ -3,7 +3,7 @@
  * candidate; `qualityFor` maps the canvas quality scale to MozJPEG's.
  */
 import encode, { init } from '@jsquash/jpeg/encode'
-import type { EncoderOverrides } from '../engine/codec'
+import type { EncoderOverrides } from '../../src/lib/engine/codec'
 
 export async function loadMozjpeg(qualityFor: (canvasQuality: number) => number = (q) => Math.round(q * 100)): Promise<NonNullable<EncoderOverrides['writeJpeg']>> {
   await init()

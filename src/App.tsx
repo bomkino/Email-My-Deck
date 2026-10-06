@@ -504,7 +504,7 @@ function Busy({ file, stage, progress, weights, headingRef, onCancel }: { file: 
   const elapsed = useElapsed(true)
   const key = stage === 'splitting' ? 'split' : stageFor(progress.label, progress.stage) ?? (stage === 'flattening' ? 'flatten' : null)
   const words = key ? stageCopy[key] : progress.label || stageCopy.work
-  const label = progress.page && progress.pages && (key === 'photos' || key === 'split' || key === 'flatten') ? `${words} · slide ${progress.page} of ${progress.pages}` : words
+  const label = progress.page && progress.pages && (key === 'photos' || key === 'sharpen' || key === 'split' || key === 'flatten') ? `${words} · slide ${progress.page} of ${progress.pages}` : words
   const percent = Math.round(shown * 100)
   const status = useStatusLine(key, label)
   return <section className="panel panel--busy" aria-busy="true" aria-labelledby="emd-busy-title">
@@ -588,7 +588,7 @@ function CantFit({ outcome, flattenMiss, breaks, profileId, weights, headingRef,
   return <section className="panel panel--split" aria-labelledby="emd-split-title">
     <p className="eyebrow" data-pd-type="metadata">{cantFitCopy.eyebrow}</p>
     <h2 id="emd-split-title" ref={headingRef} tabIndex={-1} data-pd-type="heading.subsection">{cantFitCopy.title}</h2>
-    <p className="ready-lede" data-pd-type="body.default">{cantFitCopy.reason(reason, sizeText(lightest), weights)}</p>
+    <p className="ready-lede" data-pd-type="body.default">{cantFitCopy.reason(reason, sizeText(lightest), weights, outcome.weight)}</p>
     {tryGmail && <p className="ready-alt" data-pd-type="body.small">{cantFitCopy.gmailHint} <button className="text-button" type="button" onClick={onGmail}>{cantFitCopy.gmailAction}</button></p>}
     <p className="ways-intro" data-pd-type="title.functional">{cantFitCopy.ways(ENGINE_FEATURES.flatten ? 3 : 2)}</p>
 

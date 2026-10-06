@@ -2,8 +2,9 @@
  * inspect: reading the file. tidy: lossless rewrite. photos: re-saving images
  * at their size. resize: shrinking images bigger than the slide needs (shares
  * the photos band). verify: assembling and checking. split: packing parts.
+ * flatten: turning each page into a picture (only when asked for).
  */
-export type EngineStage = 'inspect' | 'tidy' | 'photos' | 'resize' | 'verify' | 'split'
+export type EngineStage = 'inspect' | 'tidy' | 'photos' | 'resize' | 'verify' | 'split' | 'flatten'
 
 export type ProgressEvent = {
   stage: EngineStage
@@ -22,6 +23,8 @@ export const STAGE_BANDS: Record<EngineStage, [number, number]> = {
   resize: [0.16, 0.78],
   verify: [0.78, 0.9],
   split: [0.9, 0.99],
+  // A flatten job is inspect, flatten, then verify in the band after it.
+  flatten: [0.06, 0.88],
 }
 
 export const STAGE_LABELS: Record<EngineStage, string> = {
@@ -31,6 +34,7 @@ export const STAGE_LABELS: Record<EngineStage, string> = {
   resize: 'Resizing photos to screen size',
   verify: 'Checking every slide made it',
   split: 'Splitting into emails',
+  flatten: 'Turning slides into pictures',
 }
 
 const MIN_INTERVAL_MS = 80

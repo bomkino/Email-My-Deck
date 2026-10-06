@@ -1,0 +1,725 @@
+--- a/src/blur/gaussian.rs
++++ b/src/blur/gaussian.rs
+@@ -3,6 +3,8 @@
+     include!(concat!(env!("OUT_DIR"), "/recursive_gaussian.rs"));
+ }
+ 
++use crate::mul_add_f32;
++
+ /// Implements "Recursive Implementation of the Gaussian Filter Using Truncated
+ /// Cosine Functions" by Charalampidis [2016].
+ pub struct RecursiveGaussian;
+@@ -26,6 +28,20 @@
+     pub fn horizontal_pass(&self, input: &[f32], output: &mut [f32], width: usize) {
+         assert_eq!(input.len(), output.len());
+ 
++        // With relaxed SIMD, blocks of `relaxed::ROWS` rows go through the SIMD
++        // kernel and only the remaining rows through `horizontal_row`.
++        #[cfg(all(target_arch = "wasm32", target_feature = "relaxed-simd"))]
++        let (input, output) = {
++            let block = relaxed::ROWS * width;
++            let split = input.len() - input.len() % block;
++            let (in_main, in_rest) = input.split_at(split);
++            let (out_main, out_rest) = output.split_at_mut(split);
++            for (input, output) in in_main.chunks_exact(block).zip(out_main.chunks_exact_mut(block)) {
++                relaxed::horizontal_rows(input, output, width);
++            }
++            (in_rest, out_rest)
++        };
++
+         for (input, output) in input
+             .chunks_exact(width)
+             .zip(output.chunks_exact_mut(width))
+@@ -65,16 +81,16 @@
+             let mut out_3 = sum * consts::MUL_IN_3;
+             let mut out_5 = sum * consts::MUL_IN_5;
+ 
+-            out_1 = consts::MUL_PREV2_1.mul_add(prev2_1, out_1);
+-            out_3 = consts::MUL_PREV2_3.mul_add(prev2_3, out_3);
+-            out_5 = consts::MUL_PREV2_5.mul_add(prev2_5, out_5);
++            out_1 = mul_add_f32(consts::MUL_PREV2_1, prev2_1, out_1);
++            out_3 = mul_add_f32(consts::MUL_PREV2_3, prev2_3, out_3);
++            out_5 = mul_add_f32(consts::MUL_PREV2_5, prev2_5, out_5);
+             prev2_1 = prev_1;
+             prev2_3 = prev_3;
+             prev2_5 = prev_5;
+ 
+-            out_1 = consts::MUL_PREV_1.mul_add(prev_1, out_1);
+-            out_3 = consts::MUL_PREV_3.mul_add(prev_3, out_3);
+-            out_5 = consts::MUL_PREV_5.mul_add(prev_5, out_5);
++            out_1 = mul_add_f32(consts::MUL_PREV_1, prev_1, out_1);
++            out_3 = mul_add_f32(consts::MUL_PREV_3, prev_3, out_3);
++            out_5 = mul_add_f32(consts::MUL_PREV_5, prev_5, out_5);
+             prev_1 = out_1;
+             prev_3 = out_3;
+             prev_5 = out_5;
+@@ -104,6 +120,21 @@
+         assert_eq!(input.len(), output.len());
+ 
+         let mut x = 0;
++
++        // Columns are independent, so how they are grouped does not change the result.
++        #[cfg(all(target_arch = "wasm32", target_feature = "relaxed-simd"))]
++        {
++            while x + relaxed::MAX_COLUMNS <= width {
++                relaxed::vertical_columns(&input[x..], &mut output[x..], width, height, relaxed::MAX_COLUMNS);
++                x += relaxed::MAX_COLUMNS;
++            }
++            let rest = (width - x) & !3;
++            if rest > 0 {
++                relaxed::vertical_columns(&input[x..], &mut output[x..], width, height, rest);
++                x += rest;
++            }
++        }
++
+         while x + J <= width {
+             self.vertical_pass::<J>(&input[x..], &mut output[x..], width, height);
+             x += J;
+@@ -120,7 +151,10 @@
+         }
+     }
+ 
+-    // Apply 1D vertical scan on COLUMNS elements at a time
++    // Apply 1D vertical scan on COLUMNS elements at a time.
++    // Same arithmetic as the original; the filter state lives in fixed-size arrays
++    // that are updated in place instead of three Vecs allocated per call and
++    // copied per row.
+     pub fn vertical_pass<const COLUMNS: usize>(
+         &self,
+         input: &[f32],
+@@ -132,23 +166,27 @@
+ 
+         let big_n = consts::RADIUS as isize;
+ 
+-        let zeroes = vec![0f32; COLUMNS];
+-        let mut prev = vec![0f32; 3 * COLUMNS];
+-        let mut prev2 = vec![0f32; 3 * COLUMNS];
+-        let mut out = vec![0f32; 3 * COLUMNS];
++        let zeroes = [0f32; COLUMNS];
++        let mut prev_1 = [0f32; COLUMNS];
++        let mut prev_3 = [0f32; COLUMNS];
++        let mut prev_5 = [0f32; COLUMNS];
++        let mut prev2_1 = [0f32; COLUMNS];
++        let mut prev2_3 = [0f32; COLUMNS];
++        let mut prev2_5 = [0f32; COLUMNS];
++        let mut res = [0f32; COLUMNS];
+ 
+         let mut n = (-big_n) + 1;
+         while n < height as isize {
+             let top = n - big_n - 1;
+             let bottom = n + big_n - 1;
+-            let top_row = if top >= 0 {
+-                &input[top as usize * width..][..COLUMNS]
++            let top_row: &[f32; COLUMNS] = if top >= 0 {
++                input[top as usize * width..][..COLUMNS].try_into().unwrap()
+             } else {
+                 &zeroes
+             };
+ 
+-            let bottom_row = if bottom < height as isize {
+-                &input[bottom as usize * width..][..COLUMNS]
++            let bottom_row: &[f32; COLUMNS] = if bottom < height as isize {
++                input[bottom as usize * width..][..COLUMNS].try_into().unwrap()
+             } else {
+                 &zeroes
+             };
+@@ -156,30 +194,175 @@
+             for i in 0..COLUMNS {
+                 let sum = top_row[i] + bottom_row[i];
+ 
+-                let i1 = i;
+-                let i3 = i1 + COLUMNS;
+-                let i5 = i3 + COLUMNS;
+-
+-                let out1 = prev[i1].mul_add(consts::VERT_MUL_PREV_1, prev2[i1]);
+-                let out3 = prev[i3].mul_add(consts::VERT_MUL_PREV_3, prev2[i3]);
+-                let out5 = prev[i5].mul_add(consts::VERT_MUL_PREV_5, prev2[i5]);
+-
+-                let out1 = sum.mul_add(consts::VERT_MUL_IN_1, -out1);
+-                let out3 = sum.mul_add(consts::VERT_MUL_IN_3, -out3);
+-                let out5 = sum.mul_add(consts::VERT_MUL_IN_5, -out5);
+-
+-                out[i1] = out1;
+-                out[i3] = out3;
+-                out[i5] = out5;
++                let out1 = mul_add_f32(prev_1[i], consts::VERT_MUL_PREV_1, prev2_1[i]);
++                let out3 = mul_add_f32(prev_3[i], consts::VERT_MUL_PREV_3, prev2_3[i]);
++                let out5 = mul_add_f32(prev_5[i], consts::VERT_MUL_PREV_5, prev2_5[i]);
++
++                let out1 = mul_add_f32(sum, consts::VERT_MUL_IN_1, -out1);
++                let out3 = mul_add_f32(sum, consts::VERT_MUL_IN_3, -out3);
++                let out5 = mul_add_f32(sum, consts::VERT_MUL_IN_5, -out5);
++
++                prev2_1[i] = prev_1[i];
++                prev2_3[i] = prev_3[i];
++                prev2_5[i] = prev_5[i];
++                prev_1[i] = out1;
++                prev_3[i] = out3;
++                prev_5[i] = out5;
+ 
+-                if n >= 0 {
+-                    output[n as usize * width + i] = out1 + out3 + out5;
++                res[i] = out1 + out3 + out5;
++            }
++
++            if n >= 0 {
++                output[n as usize * width..][..COLUMNS].copy_from_slice(&res);
++            }
++
++            n += 1;
++        }
++    }
++}
++
++/// Kernels for the relaxed-SIMD build (`-C target-feature=+simd128,+relaxed-simd`).
++///
++/// They use `f32x4.relaxed_madd`, which WebAssembly lets an engine evaluate either
++/// fused (one rounding, like `f32::mul_add`) or unfused. The JS loader only picks
++/// this build after checking that the engine fuses it, and then these kernels give
++/// the same values as the scalar code (bit-identical in our tests).
++#[cfg(all(target_arch = "wasm32", target_feature = "relaxed-simd"))]
++mod relaxed {
++    use super::consts;
++    use core::arch::wasm32::{
++        f32x4, f32x4_add, f32x4_extract_lane, f32x4_mul, f32x4_neg, f32x4_relaxed_madd,
++        f32x4_splat, v128, v128_load, v128_store,
++    };
++
++    /// Widest column group handled by one `vertical_columns` call.
++    pub const MAX_COLUMNS: usize = 128;
++    const MAX_QUADS: usize = MAX_COLUMNS / 4;
++    /// Rows filtered together by `horizontal_rows` (four per vector).
++    pub const ROWS: usize = 4;
++    const ROW_QUADS: usize = ROWS / 4;
++
++    #[inline(always)]
++    fn load4(src: &[f32]) -> v128 {
++        let src = &src[..4];
++        // SAFETY: `src` holds four f32 (16 bytes); v128_load has no alignment requirement.
++        unsafe { v128_load(src.as_ptr().cast::<v128>()) }
++    }
++
++    #[inline(always)]
++    fn store4(dst: &mut [f32], v: v128) {
++        let dst = &mut dst[..4];
++        // SAFETY: `dst` holds four f32 (16 bytes); v128_store has no alignment requirement.
++        unsafe { v128_store(dst.as_mut_ptr().cast::<v128>(), v) }
++    }
++
++    /// `RecursiveGaussian::vertical_pass::<columns>` for `columns` a multiple of 4.
++    pub fn vertical_columns(input: &[f32], output: &mut [f32], width: usize, height: usize, columns: usize) {
++        assert!(columns % 4 == 0 && columns <= MAX_COLUMNS && columns <= width);
++        assert_eq!(input.len(), output.len());
++
++        let mul_in = [
++            f32x4_splat(consts::VERT_MUL_IN_1),
++            f32x4_splat(consts::VERT_MUL_IN_3),
++            f32x4_splat(consts::VERT_MUL_IN_5),
++        ];
++        let mul_prev = [
++            f32x4_splat(consts::VERT_MUL_PREV_1),
++            f32x4_splat(consts::VERT_MUL_PREV_3),
++            f32x4_splat(consts::VERT_MUL_PREV_5),
++        ];
++        let zero = f32x4_splat(0.0);
++        let mut prev = [[zero; MAX_QUADS]; 3];
++        let mut prev2 = [[zero; MAX_QUADS]; 3];
++
++        let big_n = consts::RADIUS as isize;
++        let mut n = (-big_n) + 1;
++        while n < height as isize {
++            let top = n - big_n - 1;
++            let bottom = n + big_n - 1;
++            let top_row = (top >= 0).then(|| &input[top as usize * width..][..columns]);
++            let bottom_row = (bottom < height as isize).then(|| &input[bottom as usize * width..][..columns]);
++            let mut out_row = (n >= 0).then(|| &mut output[n as usize * width..][..columns]);
++
++            for q in 0..columns / 4 {
++                let t = top_row.map_or(zero, |r| load4(&r[4 * q..]));
++                let b = bottom_row.map_or(zero, |r| load4(&r[4 * q..]));
++                let sum = f32x4_add(t, b);
++
++                let mut out = [zero; 3];
++                for k in 0..3 {
++                    // out = mul_add(sum, MUL_IN, -mul_add(prev, MUL_PREV, prev2))
++                    let o = f32x4_relaxed_madd(prev[k][q], mul_prev[k], prev2[k][q]);
++                    out[k] = f32x4_relaxed_madd(sum, mul_in[k], f32x4_neg(o));
++                    prev2[k][q] = prev[k][q];
++                    prev[k][q] = out[k];
++                }
++                if let Some(row) = out_row.as_deref_mut() {
++                    store4(&mut row[4 * q..], f32x4_add(f32x4_add(out[0], out[1]), out[2]));
+                 }
+             }
++            n += 1;
++        }
++    }
+ 
+-            prev2.copy_from_slice(&prev);
+-            prev.copy_from_slice(&out);
++    /// `RecursiveGaussian::horizontal_row` applied to `ROWS` consecutive rows, one row per lane.
++    pub fn horizontal_rows(input: &[f32], output: &mut [f32], width: usize) {
++        assert_eq!(input.len(), ROWS * width);
++        assert_eq!(output.len(), ROWS * width);
++
++        let mul_in = [
++            f32x4_splat(consts::MUL_IN_1),
++            f32x4_splat(consts::MUL_IN_3),
++            f32x4_splat(consts::MUL_IN_5),
++        ];
++        let mul_prev = [
++            f32x4_splat(consts::MUL_PREV_1),
++            f32x4_splat(consts::MUL_PREV_3),
++            f32x4_splat(consts::MUL_PREV_5),
++        ];
++        let mul_prev2 = [
++            f32x4_splat(consts::MUL_PREV2_1),
++            f32x4_splat(consts::MUL_PREV2_3),
++            f32x4_splat(consts::MUL_PREV2_5),
++        ];
++        let zero = f32x4_splat(0.0);
++        let mut prev = [[zero; ROW_QUADS]; 3];
++        let mut prev2 = [[zero; ROW_QUADS]; 3];
++
++        // Lanes 0..4 of quad `q` hold rows 4q..4q+4 of the block.
++        let gather = |x: usize, q: usize| -> v128 {
++            let r = 4 * q * width + x;
++            f32x4(input[r], input[r + width], input[r + 2 * width], input[r + 3 * width])
++        };
+ 
++        let big_n = consts::RADIUS as isize;
++        let mut n = (-big_n) + 1;
++        while n < width as isize {
++            let left = n - big_n - 1;
++            let right = n + big_n - 1;
++            for q in 0..ROW_QUADS {
++                let l = if left >= 0 { gather(left as usize, q) } else { zero };
++                let r = if right < width as isize { gather(right as usize, q) } else { zero };
++                let sum = f32x4_add(l, r);
++
++                let mut out = [zero; 3];
++                for k in 0..3 {
++                    let mut o = f32x4_mul(sum, mul_in[k]);
++                    o = f32x4_relaxed_madd(mul_prev2[k], prev2[k][q], o);
++                    prev2[k][q] = prev[k][q];
++                    o = f32x4_relaxed_madd(mul_prev[k], prev[k][q], o);
++                    prev[k][q] = o;
++                    out[k] = o;
++                }
++                if n >= 0 {
++                    let v = f32x4_add(f32x4_add(out[0], out[1]), out[2]);
++                    let o = 4 * q * width + n as usize;
++                    output[o] = f32x4_extract_lane::<0>(v);
++                    output[o + width] = f32x4_extract_lane::<1>(v);
++                    output[o + 2 * width] = f32x4_extract_lane::<2>(v);
++                    output[o + 3 * width] = f32x4_extract_lane::<3>(v);
++                }
++            }
+             n += 1;
+         }
+     }
+--- a/src/blur/mod.rs
++++ b/src/blur/mod.rs
+@@ -51,10 +51,15 @@
+ 
+     fn blur_plane(&mut self, plane: &[f32]) -> Vec<f32> {
+         let mut out = vec![0f32; self.width * self.height];
++        self.blur_plane_into(plane, &mut out);
++        out
++    }
++
++    /// Blur a single plane into `out` (both `width * height` long), reusing `out`'s memory.
++    pub fn blur_plane_into(&mut self, plane: &[f32], out: &mut [f32]) {
+         self.kernel
+             .horizontal_pass(plane, &mut self.temp, self.width);
+         self.kernel
+-            .vertical_pass_chunked::<128, 32>(&self.temp, &mut out, self.width, self.height);
+-        out
++            .vertical_pass_chunked::<128, 32>(&self.temp, out, self.width, self.height);
+     }
+ }
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1,5 +1,26 @@
+ mod blur;
+ 
++/// `a.mul_add(b, c)` for the per-pixel f32 hot paths.
++///
++/// wasm32 has no fused multiply-add instruction, so `f32::mul_add` compiles to an
++/// out-of-line software `fmaf` call that dominates the run time and blocks
++/// vectorisation. On wasm32 we evaluate it in f64 instead: the f32 x f32 product
++/// is exact in f64, so the only difference from a true fused multiply-add is a
++/// possible double rounding in the final f64 -> f32 step, which only matters when
++/// the f64 sum lands exactly on an f32 rounding midpoint (vanishingly rare).
++/// Every other target keeps the original `mul_add`.
++#[inline(always)]
++pub(crate) fn mul_add_f32(a: f32, b: f32, c: f32) -> f32 {
++    #[cfg(target_arch = "wasm32")]
++    {
++        (f64::from(a) * f64::from(b) + f64::from(c)) as f32
++    }
++    #[cfg(not(target_arch = "wasm32"))]
++    {
++        a.mul_add(b, c)
++    }
++}
++
+ pub use blur::Blur;
+ pub use yuvxyb::{CastFromPrimitive, Frame, LinearRgb, Pixel, Plane, Rgb, Xyb, Yuv};
+ pub use yuvxyb::{ColorPrimaries, MatrixCoefficients, TransferCharacteristic, YuvConfig};
+@@ -57,11 +78,20 @@
+     let mut width = img1.width();
+     let mut height = img1.height();
+ 
+-    let mut mul = [
+-        vec![0.0f32; width * height],
+-        vec![0.0f32; width * height],
+-        vec![0.0f32; width * height],
+-    ];
++    // Planar positive-XYB images plus one scratch plane per blurred quantity,
++    // allocated once at full size and truncated as the scales shrink. The three
++    // colour planes are independent, so they are processed one at a time; this
++    // keeps the per-plane arithmetic and summation order of the original code
++    // while needing about half the memory and no per-scale allocations.
++    let full = width * height;
++    let mut xyb1 = [vec![0.0f32; full], vec![0.0f32; full], vec![0.0f32; full]];
++    let mut xyb2 = [vec![0.0f32; full], vec![0.0f32; full], vec![0.0f32; full]];
++    let mut mul = vec![0.0f32; full];
++    let mut sigma1_sq = vec![0.0f32; full];
++    let mut sigma2_sq = vec![0.0f32; full];
++    let mut sigma12 = vec![0.0f32; full];
++    let mut mu1 = vec![0.0f32; full];
++    let mut mu2 = vec![0.0f32; full];
+     let mut blur = Blur::new(width, height);
+     let mut msssim = Msssim::default();
+ 
+@@ -76,36 +106,41 @@
+             width = img1.width();
+             height = img2.height();
+         }
+-        for c in &mut mul {
+-            c.truncate(width * height);
++        let len = width * height;
++        for plane in xyb1.iter_mut().chain(xyb2.iter_mut()) {
++            plane.truncate(len);
++        }
++        for plane in [&mut mul, &mut sigma1_sq, &mut sigma2_sq, &mut sigma12, &mut mu1, &mut mu2] {
++            plane.truncate(len);
+         }
+         blur.shrink_to(width, height);
+ 
+-        let mut img1 = Xyb::from(img1.clone());
+-        let mut img2 = Xyb::from(img2.clone());
++        linear_rgb_to_positive_xyb_planar(&img1, &mut xyb1);
++        linear_rgb_to_positive_xyb_planar(&img2, &mut xyb2);
+ 
+-        make_positive_xyb(&mut img1);
+-        make_positive_xyb(&mut img2);
+-
+-        // SSIMULACRA2 works with the data in a planar format,
+-        // so we need to convert to that.
+-        let img1 = xyb_to_planar(&img1);
+-        let img2 = xyb_to_planar(&img2);
+-
+-        image_multiply(&img1, &img1, &mut mul);
+-        let sigma1_sq = blur.blur(&mul);
+-
+-        image_multiply(&img2, &img2, &mut mul);
+-        let sigma2_sq = blur.blur(&mul);
+-
+-        image_multiply(&img1, &img2, &mut mul);
+-        let sigma12 = blur.blur(&mul);
+-
+-        let mu1 = blur.blur(&img1);
+-        let mu2 = blur.blur(&img2);
+-
+-        let avg_ssim = ssim_map(width, height, &mu1, &mu2, &sigma1_sq, &sigma2_sq, &sigma12);
+-        let avg_edgediff = edge_diff_map(width, height, &img1, &mu1, &img2, &mu2);
++        let mut avg_ssim = [0f64; 3 * 2];
++        let mut avg_edgediff = [0f64; 3 * 4];
++        for c in 0..3 {
++            let (img1, img2) = (&xyb1[c], &xyb2[c]);
++
++            plane_multiply(img1, img1, &mut mul);
++            blur.blur_plane_into(&mul, &mut sigma1_sq);
++
++            plane_multiply(img2, img2, &mut mul);
++            blur.blur_plane_into(&mul, &mut sigma2_sq);
++
++            plane_multiply(img1, img2, &mut mul);
++            blur.blur_plane_into(&mul, &mut sigma12);
++
++            blur.blur_plane_into(img1, &mut mu1);
++            blur.blur_plane_into(img2, &mut mu2);
++
++            avg_ssim[c * 2..c * 2 + 2].copy_from_slice(&ssim_map_plane(
++                width, &mu1, &mu2, &sigma1_sq, &sigma2_sq, &sigma12,
++            ));
++            avg_edgediff[c * 4..c * 4 + 4]
++                .copy_from_slice(&edge_diff_map_plane(width, img1, &mu1, img2, &mu2));
++        }
+         msssim.scales.push(MsssimScale {
+             avg_ssim,
+             avg_edgediff,
+@@ -115,6 +150,30 @@
+     Ok(msssim.score())
+ }
+ 
++// Constants of the linear RGB -> XYB transform, copied verbatim from
++// yuvxyb 0.4.2 src/rgb_xyb.rs (MIT License, Copyright (c) 2022 Josh Holmer).
++const K_M02: f32 = 0.078f32;
++const K_M00: f32 = 0.30f32;
++const K_M01: f32 = 1.0f32 - K_M02 - K_M00;
++
++const K_M12: f32 = 0.078f32;
++const K_M10: f32 = 0.23f32;
++const K_M11: f32 = 1.0f32 - K_M12 - K_M10;
++
++const K_M20: f32 = 0.243_422_69_f32;
++const K_M21: f32 = 0.204_767_45_f32;
++const K_M22: f32 = 1.0f32 - K_M20 - K_M21;
++
++const K_B0: f32 = 0.003_793_073_4_f32;
++const K_B1: f32 = K_B0;
++const K_B2: f32 = K_B0;
++
++const OPSIN_ABSORBANCE_MATRIX: [f32; 9] = [
++    K_M00, K_M01, K_M02, K_M10, K_M11, K_M12, K_M20, K_M21, K_M22,
++];
++const OPSIN_ABSORBANCE_BIAS: [f32; 3] = [K_B0, K_B1, K_B2];
++
++// make_positive_xyb (original comment):
+ // Get all components in more or less 0..1 range
+ // Range of Rec2020 with these adjustments:
+ //  X: 0.017223..0.998838
+@@ -126,39 +185,83 @@
+ //  B: 0.272295..0.938012
+ // The maximum pixel-wise difference has to be <= 1 for the ssim formula to make
+ // sense.
+-fn make_positive_xyb(xyb: &mut Xyb) {
+-    for pix in xyb.data_mut().iter_mut() {
+-        pix[2] = (pix[2] - pix[1]) + 0.55;
+-        pix[0] = (pix[0]).mul_add(14.0, 0.42);
+-        pix[1] += 0.01;
++
++/// `make_positive_xyb(Xyb::from(lrgb.clone()))` followed by `xyb_to_planar`,
++/// fused into three simple passes over planar buffers (so they vectorise) and
++/// without the intermediate copies. The per-pixel operations are exactly those
++/// of `yuvxyb::rgb_xyb::linear_rgb_to_xyb` and the original `make_positive_xyb`.
++fn linear_rgb_to_positive_xyb_planar(lrgb: &LinearRgb, out: &mut [Vec<f32>; 3]) {
++    let m = &OPSIN_ABSORBANCE_MATRIX;
++    let bias = &OPSIN_ABSORBANCE_BIAS;
++    let [p0, p1, p2] = out;
++    let len = lrgb.data().len();
++    let (p0, p1, p2) = (&mut p0[..len], &mut p1[..len], &mut p2[..len]);
++
++    // opsin_absorbance()
++    for (i, pix) in lrgb.data().iter().enumerate() {
++        p0[i] = mul_add_f32(m[0], pix[0], mul_add_f32(m[1], pix[1], mul_add_f32(m[2], pix[2], bias[0])));
++        p1[i] = mul_add_f32(m[3], pix[0], mul_add_f32(m[4], pix[1], mul_add_f32(m[5], pix[2], bias[1])));
++        p2[i] = mul_add_f32(m[6], pix[0], mul_add_f32(m[7], pix[1], mul_add_f32(m[8], pix[2], bias[2])));
+     }
+-}
+ 
+-fn xyb_to_planar(xyb: &Xyb) -> [Vec<f32>; 3] {
+-    let mut out1 = vec![0.0f32; xyb.width() * xyb.height()];
+-    let mut out2 = vec![0.0f32; xyb.width() * xyb.height()];
+-    let mut out3 = vec![0.0f32; xyb.width() * xyb.height()];
+-    for (((i, o1), o2), o3) in xyb
+-        .data()
+-        .iter()
+-        .copied()
+-        .zip(out1.iter_mut())
+-        .zip(out2.iter_mut())
+-        .zip(out3.iter_mut())
+-    {
+-        *o1 = i[0];
+-        *o2 = i[1];
+-        *o3 = i[2];
++    // Clamp, cube root and absorbance bias.
++    for (plane, b) in [&mut *p0, &mut *p1, &mut *p2].into_iter().zip(bias) {
++        let absorb = -cbrtf_inline(*b);
++        for v in plane.iter_mut() {
++            let mut mixed = *v;
++            if mixed < 0.0 {
++                mixed = 0.0;
++            }
++            *v = cbrtf_inline(mixed) + absorb;
++        }
+     }
+ 
+-    [out1, out2, out3]
++    // mixed_to_xyb() then make_positive_xyb().
++    for ((x, y), b) in p0.iter_mut().zip(p1.iter_mut()).zip(p2.iter_mut()) {
++        let (m0, m1, m2) = (*x, *y, *b);
++        let xyb_x = 0.5f32 * (m0 - m1);
++        let xyb_y = 0.5f32 * (m0 + m1);
++        let xyb_b = m2;
++        *b = (xyb_b - xyb_y) + 0.55;
++        *x = mul_add_f32(xyb_x, 14.0, 0.42);
++        *y = xyb_y + 0.01;
++    }
+ }
+ 
+-fn image_multiply(img1: &[Vec<f32>; 3], img2: &[Vec<f32>; 3], out: &mut [Vec<f32>; 3]) {
+-    for ((plane1, plane2), out_plane) in img1.iter().zip(img2.iter()).zip(out.iter_mut()) {
+-        for ((&p1, &p2), o) in plane1.iter().zip(plane2.iter()).zip(out_plane.iter_mut()) {
+-            *o = p1 * p2;
+-        }
++/// `yuvxyb_math::cbrtf` with the `fastmath` feature (a port of FreeBSD's `cbrtf`),
++/// copied so it can be inlined into the plane loop and vectorised. Same operations,
++/// same results. The argument must be zero or a positive normal number.
++///
++/// Conversion to float by Ian Lance Taylor, Cygnus Support, ian@cygnus.com.
++/// Debugged and optimized by Bruce D. Evans.
++/// Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
++/// Developed at SunPro, a Sun Microsystems, Inc. business.
++/// Permission to use, copy, modify, and distribute this
++/// software is freely granted, provided that this notice
++/// is preserved.
++#[inline(always)]
++fn cbrtf_inline(x: f32) -> f32 {
++    // B1 = (127-127.0/3-0.03306235651)*2**23
++    const B1: u32 = 709_958_130;
++
++    let mut ui: u32 = x.to_bits();
++    let mut hx: u32 = ui & 0x7FFF_FFFF;
++    hx = hx / 3 + B1;
++    ui &= 0x8000_0000;
++    ui |= hx;
++
++    let xd = f64::from(x);
++    let mut t = f64::from(f32::from_bits(ui));
++    let mut r = t * t * t;
++    t = t * (xd + xd + r) / (xd + r + r);
++    r = t * t * t;
++    t = t * (xd + xd + r) / (xd + r + r);
++    t as f32
++}
++
++fn plane_multiply(plane1: &[f32], plane2: &[f32], out: &mut [f32]) {
++    for ((&p1, &p2), o) in plane1.iter().zip(plane2.iter()).zip(out.iter_mut()) {
++        *o = p1 * p2;
+     }
+ }
+ 
+@@ -194,27 +297,25 @@
+     LinearRgb::new(out_data, out_w, out_h).expect("Resolution and data size match")
+ }
+ 
+-fn ssim_map(
++/// One plane of the original `ssim_map` (same per-pixel maths and summation order).
++fn ssim_map_plane(
+     width: usize,
+-    height: usize,
+-    m1: &[Vec<f32>; 3],
+-    m2: &[Vec<f32>; 3],
+-    s11: &[Vec<f32>; 3],
+-    s22: &[Vec<f32>; 3],
+-    s12: &[Vec<f32>; 3],
+-) -> [f64; 3 * 2] {
++    m1: &[f32],
++    m2: &[f32],
++    s11: &[f32],
++    s22: &[f32],
++    s12: &[f32],
++) -> [f64; 2] {
+     const C2: f32 = 0.0009f32;
+ 
+-    let one_per_pixels = 1.0f64 / (width * height) as f64;
+-    let mut plane_averages = [0f64; 3 * 2];
++    let one_per_pixels = 1.0f64 / m1.len() as f64;
+ 
+-    for c in 0..3 {
++    {
+         let mut sum1 = [0.0f64; 2];
+-        for (row_m1, (row_m2, (row_s11, (row_s22, row_s12)))) in m1[c].chunks_exact(width).zip(
+-            m2[c].chunks_exact(width).zip(
+-                s11[c]
+-                    .chunks_exact(width)
+-                    .zip(s22[c].chunks_exact(width).zip(s12[c].chunks_exact(width))),
++        for (row_m1, (row_m2, (row_s11, (row_s22, row_s12)))) in m1.chunks_exact(width).zip(
++            m2.chunks_exact(width).zip(
++                s11.chunks_exact(width)
++                    .zip(s22.chunks_exact(width).zip(s12.chunks_exact(width))),
+             ),
+         ) {
+             for x in 0..width {
+@@ -235,8 +336,8 @@
+                 // perceptually uniform) or chroma (where weighing green more than red
+                 // or blue more than yellow does not make any sense at all). So it is
+                 // better to simply drop this denominator.
+-                let num_m = mu_diff.mul_add(-mu_diff, 1.0f32);
+-                let num_s = 2f32.mul_add(row_s12[x] - mu12, C2);
++                let num_m = mul_add_f32(mu_diff, -mu_diff, 1.0f32);
++                let num_s = mul_add_f32(2f32, row_s12[x] - mu12, C2);
+                 let denom_s = (row_s11[x] - mu11) + (row_s22[x] - mu22) + C2;
+                 // Use 1 - SSIM' so it becomes an error score instead of a quality
+                 // index. This makes it make sense to compute an L_4 norm.
+@@ -246,30 +347,28 @@
+                 sum1[1] += d.powi(4);
+             }
+         }
+-        plane_averages[c * 2] = one_per_pixels * sum1[0];
+-        plane_averages[c * 2 + 1] = (one_per_pixels * sum1[1]).sqrt().sqrt();
++        [
++            one_per_pixels * sum1[0],
++            (one_per_pixels * sum1[1]).sqrt().sqrt(),
++        ]
+     }
+-
+-    plane_averages
+ }
+ 
+-fn edge_diff_map(
++/// One plane of the original `edge_diff_map` (same per-pixel maths and summation order).
++fn edge_diff_map_plane(
+     width: usize,
+-    height: usize,
+-    img1: &[Vec<f32>; 3],
+-    mu1: &[Vec<f32>; 3],
+-    img2: &[Vec<f32>; 3],
+-    mu2: &[Vec<f32>; 3],
+-) -> [f64; 3 * 4] {
+-    let one_per_pixels = 1.0f64 / (width * height) as f64;
+-    let mut plane_averages = [0f64; 3 * 4];
++    img1: &[f32],
++    mu1: &[f32],
++    img2: &[f32],
++    mu2: &[f32],
++) -> [f64; 4] {
++    let one_per_pixels = 1.0f64 / img1.len() as f64;
+ 
+-    for c in 0..3 {
++    {
+         let mut sum1 = [0.0f64; 4];
+-        for (row1, (row2, (rowm1, rowm2))) in img1[c].chunks_exact(width).zip(
+-            img2[c]
+-                .chunks_exact(width)
+-                .zip(mu1[c].chunks_exact(width).zip(mu2[c].chunks_exact(width))),
++        for (row1, (row2, (rowm1, rowm2))) in img1.chunks_exact(width).zip(
++            img2.chunks_exact(width)
++                .zip(mu1.chunks_exact(width).zip(mu2.chunks_exact(width))),
+         ) {
+             for x in 0..width {
+                 let d1: f64 = (1.0 + f64::from((row2[x] - rowm2[x]).abs()))
+@@ -289,13 +388,13 @@
+                 sum1[3] += detail_lost.powi(4);
+             }
+         }
+-        plane_averages[c * 4] = one_per_pixels * sum1[0];
+-        plane_averages[c * 4 + 1] = (one_per_pixels * sum1[1]).sqrt().sqrt();
+-        plane_averages[c * 4 + 2] = one_per_pixels * sum1[2];
+-        plane_averages[c * 4 + 3] = (one_per_pixels * sum1[3]).sqrt().sqrt();
++        [
++            one_per_pixels * sum1[0],
++            (one_per_pixels * sum1[1]).sqrt().sqrt(),
++            one_per_pixels * sum1[2],
++            (one_per_pixels * sum1[3]).sqrt().sqrt(),
++        ]
+     }
+-
+-    plane_averages
+ }
+ 
+ #[derive(Debug, Clone, Default)]

@@ -1,9 +1,10 @@
 // Run the engine on decks with each codec kind and budget in Chromium; one JSON row per run.
 // Usage: node bench/run-decks.mjs <out.jsonl> <codecs,comma> <budgetsMB,comma> <deck.pdf>...
+// BENCH_SAVE=<dir> also writes each compressed deck there, as <deck>-<budget>-<codec>.pdf.
 import { createServer } from 'vite'
 import { chromium } from 'playwright-core'
-import { appendFile, writeFile } from 'node:fs/promises'
-import { basename, dirname } from 'node:path'
+import { appendFile, mkdir, writeFile } from 'node:fs/promises'
+import { basename, dirname, join } from 'node:path'
 
 const [outPath, codecList, budgetList, ...decks] = process.argv.slice(2)
 process.env.BENCH_ALLOW = [...new Set([...decks.map((file) => dirname(file)), ...(process.env.BENCH_ALLOW ?? '').split(':').filter(Boolean)])].join(':')
@@ -19,7 +20,12 @@ await writeFile(outPath, '')
 for (const deck of decks) {
   for (const budgetMB of budgetList.split(',').map(Number)) {
     for (const codec of codecList.split(',')) {
-      const row = await page.evaluate((options) => globalThis.deckBench.run(options), { url: `/@fs${deck}`, budget: Math.round(budgetMB * 1e6), codec })
+      const save = process.env.BENCH_SAVE
+      const { output, ...row } = await page.evaluate((options) => globalThis.deckBench.run(options), { url: `/@fs${deck}`, budget: Math.round(budgetMB * 1e6), codec, save: Boolean(save) })
+      if (save && output) {
+        await mkdir(save, { recursive: true })
+        await writeFile(join(save, `${basename(deck, '.pdf')}-${budgetMB}-${codec}.pdf`), Buffer.from(output, 'base64'))
+      }
       const line = { deck: basename(deck), budgetMB, codec, ...row }
       await appendFile(outPath, JSON.stringify(line) + '\n')
       console.log(basename(deck), budgetMB, codec, row.ok ? `${row.kind} ${(row.bytes / 1e6).toFixed(2)} MB rung=${row.rung} ${(row.ms / 1000).toFixed(1)}s` : row.error)

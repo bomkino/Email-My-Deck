@@ -11,6 +11,6 @@ export default defineConfig({
     watch: null,
     fs: { allow: [new URL('..', import.meta.url).pathname, ...(process.env.BENCH_ALLOW ?? '').split(':').filter(Boolean)] },
   },
-  optimizeDeps: { exclude: ['@jsquash/jpeg', '@jsquash/resize', '@jsquash/oxipng', '@jsquash/png'] },
+  optimizeDeps: { exclude: ['@jsquash/jpeg', '@jsquash/resize'] },
   worker: { format: 'es' },
 })

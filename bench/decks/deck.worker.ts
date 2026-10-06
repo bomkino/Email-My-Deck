@@ -10,17 +10,17 @@ const loadQpdf: QpdfLoader = async () => {
   return { factory: factory as unknown as QpdfModuleFactory, wasmUrl }
 }
 
-type Job = { bytes: Uint8Array; budget: number; codec: string }
+type Job = { bytes: Uint8Array; budget: number; codec: string; save?: boolean }
 
 self.onmessage = async (event: MessageEvent<Job>) => {
-  const { bytes, budget, codec: kind } = event.data
+  const { bytes, budget, codec: kind, save } = event.data
   const fallback = await codecFor(kind)
   const codec = createCodecPool(() => new Worker(new URL('./image.worker.ts', import.meta.url), { type: 'module', name: kind }), poolSize(), fallback)
   const started = performance.now()
   try {
     const deflate = kind === 'wasm' || kind.split('+').includes('deflate') ? await loadDeflate() : undefined
     const result = await compressDocument(bytes, budget, { qpdf: loadQpdf, codec, deflate })
-    self.postMessage({ ok: true, kind: result.kind, bytes: result.bytes.byteLength, rung: result.rung?.id ?? null, attempts: result.attempts, images: result.images, splitReason: result.splitReason ?? null, ms: performance.now() - started })
+    self.postMessage({ ok: true, kind: result.kind, bytes: result.bytes.byteLength, rung: result.rung?.id ?? null, attempts: result.attempts, images: result.images, splitReason: result.splitReason ?? null, ms: performance.now() - started, output: save ? result.bytes : undefined })
   } catch (error) {
     self.postMessage({ ok: false, error: String(error), ms: performance.now() - started })
   } finally {

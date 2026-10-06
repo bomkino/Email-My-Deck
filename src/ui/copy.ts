@@ -8,7 +8,9 @@ const capitalise = (text: string) => text.charAt(0).toUpperCase() + text.slice(1
 /** The mailbox the visitor picked, as a sentence names it. */
 export function mailboxName(profileId: TargetProfileId, maxMessageBytes: number): string {
   if (profileId === 'gmail-advanced') return 'Gmail to Gmail'
-  return `a ${formatSize(maxMessageBytes)} ${profileId === 'custom' ? 'limit' : 'mailbox'}`
+  const size = formatSize(maxMessageBytes)
+  // "an 8 MB limit", "an 11 MB limit", "an 18 MB limit": said, they start with a vowel.
+  return `${/^(8|1[18](?!\d))/.test(size) ? 'an' : 'a'} ${size} ${profileId === 'custom' ? 'limit' : 'mailbox'}`
 }
 
 /** Sizes for the weigh-in, all in bytes. `email` is the whole email: the packed deck plus room for a message. */
@@ -56,7 +58,7 @@ export const mailboxCopy: Record<TargetProfileId, { label: string; detail: (budg
 export const mailboxWhy =
   'Mail systems weigh the whole email, after your file has been packed for the trip. Packing adds roughly a third, so we aim below the limit and leave room for your message.'
 
-export type StageKey = 'read' | 'tidy' | 'photos' | 'resize' | 'verify' | 'split' | 'flatten' | 'work'
+export type StageKey = 'read' | 'tidy' | 'photos' | 'resize' | 'sharpen' | 'verify' | 'split' | 'flatten' | 'work'
 
 // The real step, next to the percentage. Plain on purpose: the curve balls
 // below take turns with it, and this is the line that says nothing's stuck.
@@ -65,6 +67,7 @@ export const stageCopy: Record<StageKey, string> = {
   tidy: 'Tidying the file’s insides',
   photos: 'Re-saving photos',
   resize: 'Resizing oversized photos',
+  sharpen: 'Spending the room left on sharper photos',
   verify: 'Counting every slide back in',
   split: 'Splitting it into emails',
   flatten: 'Turning slides into pictures',
@@ -74,6 +77,8 @@ export const stageCopy: Record<StageKey, string> = {
 // Map whatever the engine reports onto plain words. Unknown labels fall
 // back to the engine's own text, so a new stage never shows a blank line.
 export function stageFor(label: string, stage?: unknown): StageKey | null {
+  // The engine's last pass shares the resize stage; its label tells them apart.
+  if (/sharper|room left/i.test(label)) return 'sharpen'
   if (typeof stage === 'string' && stage in stageCopy) return stage as StageKey
   if (typeof stage === 'string') {
     if (/inspect|read/i.test(stage)) return 'read'
@@ -209,7 +214,7 @@ export const curveBalls: Record<CommentaryKey, string[]> = {
 export const dogFact = 'Dog fact: no two dogs have the same nose print. It works like a fingerprint. (Nothing to do with decks. You looked like you needed a break.)'
 
 export const commentaryKeyFor = (stage: StageKey | null): CommentaryKey =>
-  stage === 'read' || stage === 'tidy' || stage === 'photos' || stage === 'verify' || stage === 'split' || stage === 'flatten' ? stage : stage === 'resize' ? 'photos' : 'any'
+  stage === 'read' || stage === 'tidy' || stage === 'photos' || stage === 'verify' || stage === 'split' || stage === 'flatten' ? stage : stage === 'resize' || stage === 'sharpen' ? 'photos' : 'any'
 
 export const readyCopy = {
   eyebrow: 'Checked on this device',
@@ -251,7 +256,7 @@ const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : 
 
 type ReceiptLike = {
   candidate: { notes: string[] }
-  receipt?: { lossless: boolean; longEdgePx?: number; images: { resized: number; resaved: number; untouched?: number } }
+  receipt?: { lossless: boolean; longEdgePx?: number; images: { resized: number; resaved: number; untouched?: number }; paths?: { drawings: number } }
 }
 
 // The ready screen's "what we did" lines, from what the engine measured.
@@ -260,9 +265,10 @@ export function whatWeDid({ candidate, receipt }: ReceiptLike): string[] {
   if (receipt.lossless) return ['Tidied the file’s insides. Nothing you can see changed.']
   const { resized, resaved } = receipt.images
   const lines: string[] = []
-  if (resized && receipt.longEdgePx) lines.push(`Shrank ${count(resized, 'photo', 'photos')} that were bigger than they needed to be, to ${receipt.longEdgePx.toLocaleString('en')} pixels across the slide.`)
+  if (resized && receipt.longEdgePx) lines.push(`Shrank ${count(resized, 'photo', 'photos')} that were bigger than they needed to be, to at least ${receipt.longEdgePx.toLocaleString('en')} pixels across the slide.`)
   if (resaved) lines.push(`Re-saved ${count(resaved, 'photo', 'photos')} a little lighter.`)
   if (receipt.images.untouched) lines.push(`Left ${count(receipt.images.untouched, 'photo', 'photos')} exactly as ${receipt.images.untouched === 1 ? 'it was' : 'they were'}.`)
+  if (receipt.paths?.drawings) lines.push('Trimmed the drawings’ coordinates to finer than any screen can show.')
   lines.push('Text, fonts and links weren’t touched.')
   return lines
 }
@@ -283,11 +289,14 @@ export function whatFlatteningDid(flatten: { pages: number; longEdgePx?: number 
 export const cantFitCopy = {
   eyebrow: 'Too big for one email',
   title: 'We can’t get this one into a single email.',
-  reason: (reason: string | undefined, lightest: string, weights: Weights) => {
+  // `weight` is where the lightest version's bytes are, when the engine says.
+  reason: (reason: string | undefined, lightest: string, weights: Weights, weight?: { keptImagesBytes: number; otherBytes: number }) => {
     const takes = `${capitalise(weights.mailbox)} takes decks up to ${formatSize(weights.budget)}.`
     if (reason === 'browser-cannot-resize') return `This browser can’t resize photos, and photos are where the room usually is. The lightest it can make this deck is ${lightest}. ${takes} Chrome or Brave on a laptop may well fit it in one.`
-    if (reason === 'not-photos') return `Most of what’s left isn’t photos. It’s drawings, outlined text, fonts or files tucked inside, which we keep exactly as they are, so the lightest we can make it is ${lightest}. ${takes}`
-    if (reason === 'kept-images') return `Most of its weight is in images we leave exactly as they are, like print-ready CMYK photos or JPEG 2000 files, because rewriting them could shift the colours or break them. The lightest we can make it is ${lightest}. ${takes}`
+    if (reason === 'not-photos') return weight?.otherBytes
+      ? `Most of what’s left isn’t photos. About ${formatSize(weight.otherBytes)} of it is drawings, outlined text, fonts or files tucked inside, which we can only trim a little, so the lightest we can make it is ${lightest}. ${takes}`
+      : `Most of what’s left isn’t photos. It’s drawings, outlined text, fonts or files tucked inside, which we can only trim a little, so the lightest we can make it is ${lightest}. ${takes}`
+    if (reason === 'kept-images') return `${weight?.keptImagesBytes ? `About ${formatSize(weight.keptImagesBytes)} of this deck is` : 'Most of its weight is in'} images we leave exactly as they are, like print-ready CMYK photos or JPEG 2000 files, because rewriting them could shift the colours or break them. The lightest we can make it is ${lightest}. ${takes}`
     if (reason === 'quality-floor') return `The lightest we can make it without blurring your slides is ${lightest}. ${takes} Getting the rest off would mean blurry photos, and nobody should have to squint at your deck.`
     return `The lightest we can make it is ${lightest}. ${takes}`
   },

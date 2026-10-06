@@ -5,7 +5,7 @@ import { browserCodec, createBrowserCodec, type EncoderOverrides, type ImageCode
 import { loadDeflate } from '../../src/lib/encoders/deflate'
 import { jpegWriter, loadEncoders } from '../../src/lib/encoders/index'
 import { loadJpegli } from '../../src/lib/encoders/jpegli'
-import { loadMozjpeg } from '../../src/lib/encoders/mozjpeg'
+import { loadMozjpeg } from './mozjpeg'
 import { loadResize } from '../../src/lib/encoders/resize'
 import { loadScorer } from '../../src/lib/encoders/scorer'
 
