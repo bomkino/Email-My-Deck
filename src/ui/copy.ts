@@ -151,6 +151,8 @@ export const commentary: Record<CommentaryKey, string[]> = {
     'Fewer pixels, same picture. That’s the whole trick, done very carefully.',
     'Some photos get tried at more than one size, so we can keep the sharpest one that still fits.',
     'A photo can’t be shrunk until every pixel of it has been read. Your device is doing the reading.',
+    'Each photo gets saved a few different ways and held up next to the original. The lightest one that still looks like itself gets the job.',
+    'Busy photos can hide a lot of squeezing. Smooth skies can’t, so they get to keep more of theirs.',
   ],
   verify: [
     'Counting slides back in. If one’s missing, nobody leaves.',
@@ -202,6 +204,8 @@ export const curveBalls: Record<CommentaryKey, string[]> = {
     'Complimenting the photos',
     'Trying it on in two sizes',
     'Folding the big jumper',
+    'Squinting at every photo',
+    'Holding photos up to the light',
   ],
   verify: [
     'Counting heads',
