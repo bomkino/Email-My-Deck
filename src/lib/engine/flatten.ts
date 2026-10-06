@@ -51,6 +51,10 @@ export const CLARITY_FLOOR = 0.7
 const FILL_TARGET = 0.985
 /** Bytes each page adds besides its picture: page, content stream and their entries. */
 const PAGE_OVERHEAD = 400
+/** How often the bar hears from a flatten that is between slides. */
+const HEARTBEAT_MS = 400
+/** A first guess at how long a slide takes, until one has finished. */
+const FIRST_PAGE_MS = 2000
 
 /** One drawn slide: its visible box in PDF units, its rotation, and a version per rung (empty bytes when it can never be chosen). */
 export type FlatPage = { box: [number, number, number, number]; rotate: number; versions: PageVersion[] }
@@ -240,30 +244,49 @@ export async function flattenDocument(input: Uint8Array, budget: number, deps: F
   progress.update(1)
 
   progress.enter('flatten')
-  const rasterizer = await deps.rasterizer(input)
   const pages: FlatPage[] = []
   const options: Option[] = []
+  // Slides report as they finish. Between them (and while the deck opens), the bar creeps on
+  // time, so a slow slide on a slow device never looks stuck.
+  const drawing = new Map<number, number>()
+  let count = 0
+  let done = 0
+  let pageMs = FIRST_PAGE_MS
+  const heartbeat = setInterval(() => {
+    if (!count) return progress.keepAlive()
+    const time = now()
+    let partial = 0
+    for (const startedAt of drawing.values()) partial += 0.9 * (1 - Math.exp(-(time - startedAt) / pageMs))
+    progress.update((done + partial) / count)
+  }, HEARTBEAT_MS)
   try {
-    const count = rasterizer.pageCount
-    if (count !== inspection.pageCount) throw new EngineError('engine', MESSAGES.engine)
-    // A few slides in flight: one being drawn while others are re-saved.
-    const parallel = Math.max(1, (rasterizer.concurrency ?? 1) + 1)
-    const inFlight = new Set<Promise<void>>()
-    let done = 0
-    for (let index = 0; index < count; index += 1) {
-      const job: Promise<void> = rasterizer.page(index, FLATTEN_RUNGS).then((page) => {
-        options[index] = { sizes: page.versions.map((version) => version.bytes.byteLength + PAGE_OVERHEAD), clarity: page.versions.map((version) => version.clarity) }
-        pages[index] = keepUsable(page, options[index])
-        done += 1
-        progress.update(done / count, { page: done, pages: count })
-      })
-      inFlight.add(job)
-      void job.then(() => inFlight.delete(job), () => {})
-      if (inFlight.size >= parallel) await Promise.race(inFlight)
+    const rasterizer = await deps.rasterizer(input)
+    try {
+      count = rasterizer.pageCount
+      if (count !== inspection.pageCount) throw new EngineError('engine', MESSAGES.engine)
+      // A few slides in flight: one being drawn while others are re-saved.
+      const parallel = Math.max(1, (rasterizer.concurrency ?? 1) + 1)
+      const inFlight = new Set<Promise<void>>()
+      for (let index = 0; index < count; index += 1) {
+        drawing.set(index, now())
+        const job: Promise<void> = rasterizer.page(index, FLATTEN_RUNGS).then((page) => {
+          options[index] = { sizes: page.versions.map((version) => version.bytes.byteLength + PAGE_OVERHEAD), clarity: page.versions.map((version) => version.clarity) }
+          pages[index] = keepUsable(page, options[index])
+          pageMs += (now() - drawing.get(index)! - pageMs) / (done + 1)
+          drawing.delete(index)
+          done += 1
+          progress.update(done / count, { page: done, pages: count })
+        })
+        inFlight.add(job)
+        void job.then(() => inFlight.delete(job), () => {})
+        if (inFlight.size >= parallel) await Promise.race(inFlight)
+      }
+      await Promise.all(inFlight)
+    } finally {
+      rasterizer.close()
     }
-    await Promise.all(inFlight)
   } finally {
-    rasterizer.close()
+    clearInterval(heartbeat)
   }
 
   // The flatten band runs to where verify usually starts, so verify takes the room after it.

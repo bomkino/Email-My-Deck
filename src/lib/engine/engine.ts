@@ -316,7 +316,7 @@ export async function compressDocument(input: Uint8Array, budget: number, deps: 
   const firstWave = Math.min(learnCount, concurrency)
   await encodeImages(plans.slice(0, firstWave), allRungs)
   const plausible = plausibleRungs(predictTotals(), budget)
-  rounded = await rounding
+  rounded = await keepingAlive(progress, rounding)
   baseBytes -= rounded.savedBytes
   const paths = rounded.streams ? { drawings: rounded.streams, savedBytes: rounded.savedBytes } : undefined
   await encodeImages(plans.slice(firstWave, learnCount), plausible)
@@ -511,6 +511,16 @@ function countForShare(plans: ImagePlan[], bytes: number): number {
     if (total >= bytes) return index + 1
   }
   return plans.length
+}
+
+/** Wait for `work`, which reports no progress itself, without the bar going quiet. */
+async function keepingAlive<T>(progress: ProgressReporter, work: Promise<T>): Promise<T> {
+  const heartbeat = setInterval(() => progress.keepAlive(), HEARTBEAT_MS)
+  try {
+    return await work
+  } finally {
+    clearInterval(heartbeat)
+  }
 }
 
 /**
