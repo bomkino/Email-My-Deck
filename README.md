@@ -41,7 +41,7 @@ npm run smoke
 
 ## On pitch.dog
 
-The live home for the tool is `pitch.dog/email-my-deck/`. `index.html` is the whole pitch.dog page; the React tool mounts inside it at `#emd-root`. The page borrows pitch.dog's type system, nav, analytics loader and icons by absolute path, so those only appear when it is served from the main site; under `npm run dev` the tool works but the page is unstyled around it.
+The live home for the tool is `pitch.dog/email-my-deck/`, marked beta while we test it on real decks. `index.html` is the whole pitch.dog page; the React tool mounts inside it at `#emd-root`. The page borrows pitch.dog's type system, nav, analytics loader and icons by absolute path, so those only appear when it is served from the main site; under `npm run dev` the tool works but the page is unstyled around it.
 
 ```bash
 npm run build:pitchdog   # builds dist-pitchdog/ with base /email-my-deck/
@@ -77,10 +77,10 @@ Document bytes are kept in memory only. They are not written to localStorage, In
 
 ## Current limitations
 
-- Password-protected PDFs and PDFs containing forms, signatures, attachments, or scripts are rejected rather than silently rewritten. Export a flattened copy first.
-- The browser has a first-release memory budget: up to 200 MiB normally, reduced to 80 MiB on devices reporting 2 GiB or less. Very large PDFs may need to be split in the user’s PDF application before opening this tool.
+- Password-protected or permission-restricted PDFs, and PDFs containing forms, signatures, attachments, or scripts, are refused rather than silently rewritten. Export a flattened copy first.
+- The page accepts PDFs up to 200 MiB (about 210 MB), or 80 MiB (about 84 MB) on devices reporting 2 GB of memory or less. Larger PDFs need splitting in the user’s PDF application first.
 - Compression is tuned for presentation decks, not archival PDF optimization. Visual differences can occur in raster images; text and page geometry are checked.
-- The standalone Vite build assumes it is served at `/`. Use a same-origin route or link from pitch.dog unless the base path and worker URLs are deliberately configured.
+- `npm run build` assumes the site is served at `/`; `npm run build:pitchdog` builds for `/email-my-deck/`. Any other path needs `EMD_BASE` set at build time.
 - `frame-ancestors 'none'` is intentional. The standalone site should not be embedded in an iframe without a security review.
 
 ## License
