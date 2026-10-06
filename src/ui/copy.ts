@@ -258,7 +258,8 @@ export const cantFitCopy = {
   reason: (reason: string | undefined, lightest: string, weights: Weights) => {
     const takes = `${capitalise(weights.mailbox)} takes decks up to ${formatSize(weights.budget)}.`
     if (reason === 'browser-cannot-resize') return `This browser can’t resize photos, and photos are where the room usually is. The lightest it can make this deck is ${lightest}. ${takes} Chrome or Brave on a laptop may well fit it in one.`
-    if (reason === 'not-photos') return `Most of its weight isn’t in photos. It’s in fonts, vector artwork or video, which we keep exactly as they are, so the lightest we can make it is ${lightest}. ${takes}`
+    if (reason === 'not-photos') return `Most of what’s left isn’t photos. It’s drawings, outlined text, fonts or files tucked inside, which we keep exactly as they are, so the lightest we can make it is ${lightest}. ${takes}`
+    if (reason === 'kept-images') return `Most of its weight is in images we leave exactly as they are, like print-ready CMYK photos or JPEG 2000 files, because rewriting them could shift the colours or break them. The lightest we can make it is ${lightest}. ${takes}`
     if (reason === 'quality-floor') return `The lightest we can make it without blurring your slides is ${lightest}. ${takes} Getting the rest off would mean blurry photos, and nobody should have to squint at your deck.`
     return `The lightest we can make it is ${lightest}. ${takes}`
   },
