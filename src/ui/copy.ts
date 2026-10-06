@@ -292,9 +292,10 @@ export function whatWeDid({ candidate, receipt }: ReceiptLike): string[] {
 // The receipt of a flattened deck: what it cost, said as plainly as what it saved.
 export function whatFlatteningDid(flatten: { pages: number; longEdgePx?: number } | undefined, pages: number): string[] {
   const slides = flatten?.pages ?? pages
-  const across = flatten?.longEdgePx ? `, ${flatten.longEdgePx.toLocaleString('en')} pixels across` : ''
+  // longEdgePx is the lightest slide's; with more than one, most are sharper.
+  const across = flatten?.longEdgePx ? `, ${slides === 1 ? '' : 'at least '}${flatten.longEdgePx.toLocaleString('en')} pixels across` : ''
   return [
-    `Turned ${slides === 1 ? 'the slide' : `all ${slides} slides`} into pictures${across}.`,
+    `Turned ${slides === 1 ? 'the slide into a picture' : `all ${slides} slides into pictures`}${across}.`,
     'Text can’t be selected or searched now, and links won’t click.',
   ]
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { busyCopy, cantFitCopy, commentary, curveBalls, dogFact, mailboxName, stageFor, waitFor, whatWeDid, type Weights } from '../src/ui/copy'
+import { busyCopy, cantFitCopy, commentary, curveBalls, dogFact, mailboxName, stageFor, waitFor, whatFlatteningDid, whatWeDid, type Weights } from '../src/ui/copy'
 
 const MB = 1_000_000
 const weights = (limitMB: number): Weights => ({ deck: 24 * MB, email: 33 * MB, limit: limitMB * MB, budget: 5.5 * MB, mailbox: mailboxName('custom', limitMB * MB), conditional: false })
@@ -31,6 +31,11 @@ describe('page copy', () => {
   it('gives the last sharpening pass its own words', () => {
     expect(stageFor('Using the room left for sharper photos', 'resize')).toBe('sharpen')
     expect(stageFor('Resizing photos to screen size', 'resize')).toBe('resize')
+  })
+
+  it('says flattened slides are at least as sharp as the lightest one', () => {
+    expect(whatFlatteningDid({ pages: 66, longEdgePx: 1440 }, 66)[0]).toBe('Turned all 66 slides into pictures, at least 1,440 pixels across.')
+    expect(whatFlatteningDid({ pages: 1, longEdgePx: 2400 }, 1)[0]).toBe('Turned the slide into a picture, 2,400 pixels across.')
   })
 
   it('keeps talking through a long wait, with one dog fact in all', () => {
