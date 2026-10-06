@@ -4,7 +4,7 @@ A local-first, open-source PDF compressor for sending presentation decks as emai
 
 Drop a deck in the browser and download the best-looking email-sized version. The app is designed to process files on the user's device, preserve selectable text and vector artwork, account for email encoding overhead, and explain when compression is no longer a good trade.
 
-The product direction and research are in [PRODUCT-THESIS.md](PRODUCT-THESIS.md). The second review and corrected decisions are in [SECOND-PASS.md](SECOND-PASS.md). The outcome, false-success, and verification model is in [ACTUAL-GOAL.md](ACTUAL-GOAL.md).
+The product direction and research are in [PRODUCT-THESIS.md](PRODUCT-THESIS.md). The second review and corrected decisions are in [SECOND-PASS.md](SECOND-PASS.md). The outcome, false-success, and verification model is in [ACTUAL-GOAL.md](ACTUAL-GOAL.md). The scoped build plan and launch estimate are in [BUILD-PLAN.md](BUILD-PLAN.md).
 
 This repository is currently in discovery. The first implementation slice will establish a Web Worker pipeline, QPDF-WASM lossless optimization, PDF.js preview/verification, provider-aware byte targets, and a corpus-driven quality harness before the public UI is finalized.
 
