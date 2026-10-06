@@ -2,21 +2,33 @@
 // Usage: node bench/run-decks.mjs <out.jsonl> <codecs,comma> <budgetsMB,comma> <deck.pdf>...
 // BENCH_SAVE=<dir> also writes each compressed deck there, as <deck>-<budget>-<codec>.pdf.
 // BENCH_PORT picks the Vite port (default 5198), so two benches can run at once.
-// Decks are handed to the page by Playwright straight from where they are (any file name works).
+// Decks are streamed to the page straight from where they are (any file name, any size).
 import { createServer } from 'vite'
 import { chromium } from 'playwright-core'
+import { createReadStream } from 'node:fs'
 import { appendFile, mkdir, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 
 const [outPath, codecList, budgetList, ...decks] = process.argv.slice(2)
 const port = Number(process.env.BENCH_PORT || 5198)
-const server = await createServer({ configFile: new URL('./vite.config.ts', import.meta.url).pathname, server: { port, strictPort: true }, logLevel: 'warn' })
+const serveDecks = {
+  name: 'bench-decks',
+  // Ahead of Vite's own middleware, which would treat /__deck/0 as a module.
+  configureServer(server) {
+    server.middlewares.use('/__deck', (request, response) => {
+      const deck = decks[Number(request.url.slice(1))]
+      if (!deck) return void response.writeHead(404).end()
+      response.writeHead(200, { 'content-type': 'application/pdf' })
+      createReadStream(deck).pipe(response)
+    })
+  },
+}
+const server = await createServer({ configFile: new URL('./vite.config.ts', import.meta.url).pathname, plugins: [serveDecks], server: { port, strictPort: true }, logLevel: 'warn' })
 await server.listen()
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--no-sandbox', '--disable-dev-shm-usage'] })
 const page = await browser.newPage()
 page.on('console', (message) => { if (message.type() === 'error') console.error('page:', message.text()) })
 page.on('pageerror', (error) => console.error('pageerror:', error))
-await page.route('**/__deck/*', (route) => route.fulfill({ path: decks[Number(new URL(route.request().url()).pathname.split('/').pop())], contentType: 'application/pdf' }))
 await page.goto(`http://localhost:${port}/decks/index.html`)
 await page.waitForFunction(() => 'deckBench' in globalThis)
 await writeFile(outPath, '')

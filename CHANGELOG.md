@@ -14,6 +14,19 @@
 
 - Engine: the progress bar never goes quiet for long. While the squeeze waits for drawings to finish rounding, and while a flatten opens the deck or draws a slow slide, the bar still hears from the engine every 400 ms. During a flatten it creeps forward on how long slides have taken so far. Every beat repeats the last slide count, so "slide 5 of 66" under the bar no longer blinks off between slides. In Chrome, the longest silence on the 24 MB Figma deck drops from 1.9 s to 0.6 s when squeezing, and from 2.3 s to 0.8 s when flattening. A slow phone is much less likely to hit the page's watchdog. Output is byte for byte the same on all nine benchmark decks. One wait is left: QPDF reading a single very large image (1.4 s on the giant-page deck), which can't be split.
 
+### Engine: lighter photos that look better
+
+Every photo is now written by jpegli, Google's JPEG encoder compiled to WebAssembly, and gets the lightest setting that still looks right at its size. Before a photo is kept, a perceptual check (SSIMULACRA2) scores it on its busiest and smoothest parts. Busy photos give bytes back, smooth skies keep theirs, and no photo comes out heavier than before. The room saved goes back into sharper photos. Squeezing takes about ten times longer (30 to 60 s for the audit decks, about three minutes for the Figma deck on our test machine); that was the trade.
+
+- The 24 MB Figma deck, in Chrome: for 25 MB mailboxes no photo is now below 2880 px across, where before some were at 1920 (17.5 MB). For strict 20 MB ones, none below 1920 instead of 1680 (13.8 MB). Given 10 MB for the file (a 14 MB mailbox), it is now one 9.7 MB file with no photo below 1680 px, where before it needed a split.
+- The audit decks, in Chrome: those that fit at full sharpness come out up to 15% lighter (a 21 MB A4 report: 14.3 → 12.1 MB). Those that have to give, give less. At 20 MB the A4 report now keeps every photo at full sharpness, where before some went to 2880 px. A Keynote-style deck at 25 MB keeps its photos at 2880 px or more instead of 2400. At a 6 MB limit, five of them keep 10 to 31% more pixels. No deck went from one file to a split.
+- On the bench photos, each rung costs 0.84 to 0.95 of the bytes it did, and the worst-looking photo at each rung now scores close to the rung's typical look instead of far under it (`bench/README.md`).
+- No photo is heavier than the browser's own resize and encoder would have made it. When looking right would cost more, the photo gets the best look within those bytes, or the browser's own JPEG.
+- Photos are resized with Lanczos3: crisper, and the same in every browser. Drawings and lossless images are compressed with libdeflate at its strongest level, 8 to 10% smaller than the browser's zlib.
+- If the encoders can't load, or fail on one photo, the browser's own encoders write it, as before. Each encoder is a separate file on pitch.dog, fetched only when a deck needs it; the deck never leaves the browser.
+- `scripts/codecs/` has the build scripts, pinned sources and licences of the three WebAssembly modules; each rebuilds bit for bit. `bench/` has the benches. MozJPEG, palette PNG, font trimming and deduplicating images were measured and dropped.
+- The engine check's split cases use a 15 MB custom limit, so they split however well the encoders do, and the custom limit is checked on the way.
+
 ### Engine: flatten (the nuke)
 
 When a deck can't fit one email, the page can now offer a third way: turn every slide into one picture and squeeze those. It only runs when the visitor asks for it. Text stops being searchable and links stop working, but the deck stays one file. In Chrome, the 24 MB Figma deck flattens to one 13.9 MB file for strict 20 MB mailboxes with every slide still 2400 px across, in about 45 s. At a 6 MB limit it still fits, with no slide below 1216 px.
