@@ -14,7 +14,7 @@ export const ENGINE_FEATURES = {
   /** `split` honours `breakAfter`, and a result that doesn't fit carries `splitPlan`. */
   splitAt: true,
   /** `compress` with `mode: 'flatten'` turns pages into pictures. */
-  flatten: false,
+  flatten: true,
 } as const
 
 export type CompressRequest = {
@@ -28,6 +28,11 @@ export type CompressRequest = {
   customMessageMiB?: number
   /** Split in the same job when nothing fits, and answer with `split-result` only. Without it, a result that doesn't fit carries `splitPlan`. */
   autoSplit?: boolean
+  /**
+   * 'flatten': turn every page into one picture and squeeze those instead (the opt-in last resort).
+   * Answers with `compress-result`; `fits` is false when even the lightest clearly readable version is too big.
+   */
+  mode?: 'flatten'
 }
 
 export type SplitRequest = {
@@ -48,7 +53,7 @@ export type ProgressMessage = {
   /** 0..1 for the whole job, compress and split together. Never decreases. */
   fraction: number
   stage?: EngineStage
-  /** During 'photos': the slide being worked on. During 'split': pages placed so far. */
+  /** During 'photos' and 'flatten': the slide being worked on. During 'split': pages placed so far. */
   page?: number
   pages?: number
 }

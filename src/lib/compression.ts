@@ -5,7 +5,7 @@ import { estimatedMessageBytes, type TargetProfile } from './profiles'
 
 export type CompressionCandidate = {
   bytes: Uint8Array
-  engine: 'original' | 'qpdf' | 'images'
+  engine: 'original' | 'qpdf' | 'images' | 'flattened'
   quality: 'preserved' | 'optimized' | 'strong'
   notes: string[]
 }
@@ -24,6 +24,8 @@ export type CompressionReceipt = {
   lossless: boolean
   /** Drawings whose path coordinates were rounded below what a screen shows, and the bytes that saved. */
   paths?: { drawings: number; savedBytes: number }
+  /** For a flattened deck: slides turned into pictures, and the fewest pixels across any slide kept. */
+  flatten?: { pages: number; longEdgePx: number; jpegQuality: number; clarity: number }
   /** What was verified on the result: 'unchanged' | 'page-count' | 'page-size' | 'structure'. */
   checks: string[]
   attempts: Attempt[]
@@ -52,8 +54,15 @@ function plural(count: number, word: string): string {
   return `${count} ${word}${count === 1 ? '' : 's'}`
 }
 
-export function describeResult(result: Pick<EngineResult, 'kind' | 'images' | 'rung' | 'paths'>): string[] {
+export function describeResult(result: Pick<EngineResult, 'kind' | 'images' | 'rung' | 'paths' | 'flatten'>): string[] {
   if (result.kind === 'original') return ['Your original already fits. Nothing was changed.']
+  if (result.kind === 'flattened') {
+    const slides = result.flatten?.pages ?? 0
+    return [
+      `Turned ${slides === 1 ? 'the slide' : plural(slides, 'slide')} into pictures${result.flatten ? `, at least ${result.flatten.longEdgePx} pixels across` : ''}.`,
+      'Text can’t be selected or searched, and links won’t click.',
+    ]
+  }
   if (result.kind === 'lossless' || (result.kind === 'split-needed' && !result.rung)) {
     return ['Tidied the file’s internal structure only. Every slide and image is unchanged.']
   }
@@ -68,9 +77,10 @@ export function describeResult(result: Pick<EngineResult, 'kind' | 'images' | 'r
 }
 
 export function toOutcome(result: EngineResult, originalBytes: number, profile: TargetProfile, targetBytes: number): CompressionOutcome {
+  const flattened = result.kind === 'flattened'
   const rewroteImages = result.images.resized + result.images.resaved > 0
-  const engine: CompressionCandidate['engine'] = result.kind === 'original' ? 'original' : rewroteImages ? 'images' : 'qpdf'
-  const quality: CompressionCandidate['quality'] = !rewroteImages ? 'preserved' : result.images.resized ? 'strong' : 'optimized'
+  const engine: CompressionCandidate['engine'] = flattened ? 'flattened' : result.kind === 'original' ? 'original' : rewroteImages ? 'images' : 'qpdf'
+  const quality: CompressionCandidate['quality'] = flattened ? 'strong' : !rewroteImages ? 'preserved' : result.images.resized ? 'strong' : 'optimized'
   return {
     candidate: { bytes: result.bytes, engine, quality, notes: describeResult(result) },
     targetBytes,
@@ -83,10 +93,11 @@ export function toOutcome(result: EngineResult, originalBytes: number, profile: 
       outputBytes: result.bytes.byteLength,
       pages: result.pageCount,
       images: result.images,
-      longEdgePx: rewroteImages ? result.rung?.longEdgePx : undefined,
-      jpegQuality: rewroteImages && result.rung ? Math.round(result.rung.jpegQuality * 100) : undefined,
-      lossless: !rewroteImages && !result.paths,
+      longEdgePx: flattened ? result.flatten?.longEdgePx : rewroteImages ? result.rung?.longEdgePx : undefined,
+      jpegQuality: flattened ? result.flatten?.jpegQuality : rewroteImages && result.rung ? Math.round(result.rung.jpegQuality * 100) : undefined,
+      lossless: !flattened && !rewroteImages && !result.paths,
       paths: result.paths,
+      flatten: result.flatten,
       checks: result.checks,
       attempts: result.attempts,
     },
