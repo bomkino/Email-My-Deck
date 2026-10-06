@@ -28,6 +28,10 @@ export type ImageRecord = {
   hasMatte: boolean
   /** 1-based page numbers that draw this image directly (QPDF's page image list). */
   pages: number[]
+  /** Pages whose resources reach this image, directly or through form XObjects (or, for a soft mask, through its image). */
+  reach: number[]
+  /** Set on a soft mask: the images it masks. It is drawn wherever they are. */
+  maskOf?: string[]
   /** How the engine may rewrite it, or why it leaves it untouched. */
   kind: 'jpeg' | 'raw' | null
   skipReason?: string
@@ -53,6 +57,7 @@ export const INSPECT_ARGS = [
   '--json-stream-data=none',
 ]
 
+const FLATE_FILTERS = new Set(['/FlateDecode', '/Fl'])
 const GENERAL_FILTERS = new Set(['/FlateDecode', '/Fl', '/LZWDecode', '/LZW', '/ASCII85Decode', '/A85', '/ASCIIHexDecode', '/AHx', '/RunLengthDecode', '/RL'])
 const MIN_REWRITE_PIXELS = 128 * 128
 const MIN_REWRITE_BYTES = 16 * 1024
@@ -105,6 +110,35 @@ export function inspectionFromJson(data: QpdfJsonDocument): Inspection {
       }
     }
   })
+  // QPDF lists only images a page names directly. Exporters such as Figma, Canva and
+  // Quartz put photos inside form XObjects, and soft masks hang off their images.
+  pages.forEach((page) => {
+    for (const ref of imagesReachable(graph, page.resources)) {
+      let record = images.get(ref)
+      if (!record) {
+        record = imageRecord(graph, ref) ?? undefined
+        if (!record) continue
+        images.set(ref, record)
+      }
+      // Each page is walked once and lists each image once, so this stays sorted and unique.
+      record.reach.push(page.number)
+    }
+  })
+  // A soft mask is drawn wherever its images are: usually one image, occasionally several.
+  for (const record of [...images.values()]) {
+    const mask = graph.streamDict(record.ref)?.['/SMask']
+    if (!isRef(mask)) continue
+    let maskRecord = images.get(mask)
+    if (!maskRecord) {
+      maskRecord = imageRecord(graph, mask) ?? undefined
+      if (!maskRecord) continue
+      images.set(mask, maskRecord)
+    }
+    maskRecord.maskOf = [...(maskRecord.maskOf ?? []), record.ref]
+    maskRecord.reach = [...new Set([...maskRecord.reach, ...record.reach])].sort((a, b) => a - b)
+    // With /Matte the mask and its image must keep the same size.
+    if (record.hasMatte) maskRecord.hasMatte = true
+  }
 
   const encrypt = data.encrypt
   const encrypted = Boolean(encrypt?.encrypted)
@@ -145,6 +179,7 @@ export function imageRecord(graph: PdfGraph, ref: string): ImageRecord | null {
     hasSoftMask: Boolean(softMaskDict),
     hasMatte: Boolean(softMaskDict && softMaskDict['/Matte'] !== undefined),
     pages: [],
+    reach: [],
     kind: null,
   }
   const skip = (reason: string) => {
@@ -152,13 +187,19 @@ export function imageRecord(graph: PdfGraph, ref: string): ImageRecord | null {
     return record
   }
   if (imageMask) return skip('stencil mask')
-  if (bitsPerComponent !== 8) return skip(`${bitsPerComponent}-bit samples`)
+  if (bitsPerComponent !== 8 && bitsPerComponent !== 16) return skip(`${bitsPerComponent}-bit samples`)
   if (colorModel !== 'rgb' && colorModel !== 'gray') return skip(`${colorModel} colour`)
   if (Array.isArray(mask)) return skip('colour-key mask')
   if (width * height < MIN_REWRITE_PIXELS || record.bytes < MIN_REWRITE_BYTES) return skip('small')
-  if (filters.length === 1 && (filters[0] === '/DCTDecode' || filters[0] === '/DCT')) {
-    const parms = Array.isArray(decodeParms) ? graph.dict(decodeParms[0]) : graph.dict(decodeParms)
+  // A JPEG, possibly deflated again by a PDF compressor (iLovePDF does this).
+  const last = filters[filters.length - 1]
+  if ((last === '/DCTDecode' || last === '/DCT') && filters.slice(0, -1).every((filter) => FLATE_FILTERS.has(filter))) {
+    if (bitsPerComponent !== 8) return skip(`${bitsPerComponent}-bit JPEG`)
+    const parmsList = Array.isArray(decodeParms) ? decodeParms : [decodeParms ?? null]
+    const parms = graph.dict(parmsList[filters.length - 1] ?? null)
     if (parms && parms['/ColorTransform'] !== undefined) return skip('custom JPEG colour transform')
+    // A predictor on the Flate wrapper would need undoing too; no exporter does that.
+    if (parmsList.slice(0, filters.length - 1).some((entry) => (graph.number(graph.dict(entry ?? null)?.['/Predictor']) ?? 1) > 1)) return skip('Flate predictor around a JPEG')
     record.kind = 'jpeg'
     return record
   }
@@ -167,6 +208,28 @@ export function imageRecord(graph: PdfGraph, ref: string): ImageRecord | null {
     return record
   }
   return skip(`${filters.join(' ')} encoding`)
+}
+
+/** Every image XObject reachable from `resources`, following form XObjects. */
+export function imagesReachable(graph: PdfGraph, resources: JsonDict | null): string[] {
+  const found: string[] = []
+  const seen = new Set<string>()
+  const queue: Array<JsonDict | null> = [resources]
+  while (queue.length) {
+    const current = queue.pop()
+    const xobjects = current ? graph.dict(current['/XObject']) : null
+    if (!xobjects) continue
+    for (const value of Object.values(xobjects)) {
+      if (!isRef(value) || seen.has(value)) continue
+      seen.add(value)
+      const dict = graph.streamDict(value)
+      const subtype = dict ? graph.name(dict['/Subtype']) : null
+      if (subtype === '/Image') found.push(value)
+      // A form without its own resources uses its parent's, which are already queued.
+      else if (subtype === '/Form') queue.push(graph.dict(dict?.['/Resources']))
+    }
+  }
+  return found
 }
 
 function nameList(graph: PdfGraph, value: JsonValue | undefined): string[] {

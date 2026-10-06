@@ -29,7 +29,8 @@ export const RESAVE_MIN_SAVING = 0.1
 /** Lossless images with more bytes per sample than this behave like photos and may become JPEG. */
 export const PHOTO_BYTES_PER_SAMPLE = 0.3
 
-export type OutputFormat = 'jpeg' | 'flate-rgb' | 'flate-gray'
+/** jpeg-gray is a one-channel JPEG we encode ourselves; canvas JPEGs are always three-channel. */
+export type OutputFormat = 'jpeg' | 'jpeg-gray' | 'flate-rgb' | 'flate-gray'
 
 export type ImageTarget = {
   width: number
@@ -73,7 +74,7 @@ export function isPhotographic(image: ImageRecord): boolean {
 
 export function planImage(image: ImageRecord, placements: Placement[] | undefined, pages: PageInfo[], rungs: readonly Rung[] = RUNGS): ImagePlan {
   const photo = isPhotographic(image)
-  const firstPage = Math.min(...(placements?.map((placement) => placement.page) ?? []), ...image.pages, Number.MAX_SAFE_INTEGER)
+  const firstPage = Math.min(...(placements?.map((placement) => placement.page) ?? []), ...(image.pages.length ? image.pages : image.reach), Number.MAX_SAFE_INTEGER)
   const targets = rungs.map((rung): ImageTarget | null => {
     if (!image.kind) return null
     // A soft mask with /Matte must keep the base image's exact dimensions.
@@ -82,7 +83,9 @@ export function planImage(image: ImageRecord, placements: Placement[] | undefine
     const width = resized ? Math.max(16, Math.round(image.width * scale)) : image.width
     const height = resized ? Math.max(16, Math.round(image.height * scale)) : image.height
     if (image.colorModel === 'gray') {
-      // Gray stays gray: canvas JPEGs are always three-channel.
+      // Gray stays gray. A gray photo becomes a gray JPEG; a soft mask drawn from lossless
+      // samples stays lossless, because JPEG ringing would show along its hard edges.
+      if (image.kind === 'jpeg' || (photo && !image.maskOf?.length)) return { width, height, format: 'jpeg-gray', quality: rung.jpegQuality, resized }
       return resized ? { width, height, format: 'flate-gray', resized } : null
     }
     if (photo) return { width, height, format: 'jpeg', quality: rung.jpegQuality, resized }

@@ -16,6 +16,7 @@ const cases = [
   { deck: 'vector-deck.pdf', profile: 'common-25', expect: 'original' },
   { deck: 'photo-deck.pdf', profile: 'strict-20', expect: 'fits' },
   { deck: 'shared-resources-deck.pdf', profile: 'strict-20', expect: 'fits' },
+  { deck: 'design-tool-deck.pdf', profile: 'common-25', expect: 'fits' },
   { deck: 'email-pressure-test.pdf', profile: 'strict-20', autoSplit: true, expect: 'split' },
   { deck: 'email-pressure-test.pdf', profile: 'strict-20', autoSplit: false, expect: 'needs-split' },
   { deck: 'forms-deck.pdf', profile: 'common-25', expect: 'error:protected:forms' },

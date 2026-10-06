@@ -5,6 +5,18 @@
 - The moment a deck is dropped, the page says what it will weigh as an email against the mailbox picked, including the deck that looks under 25 MB but isn't. The ready screens confirm it: why the deck had to change, or that it fits, packing and all.
 - When a deck can't fit one email, the page says so, gives the reason and the lightest size reached, then offers one link (our pick) before the parts, and Gmail to Gmail when that would fit. Splitting is the last resort.
 
+### Engine: decks from design tools
+
+A 24 MB Figma deck run through iLovePDF came back as two emails (17.5 + 6.9 MB), because the engine never touched most of its pictures. It now comes back as one 16.9 MB file in Chrome.
+
+- Photos inside groups (form XObjects, nested any depth) are found, sized from where they are drawn, and rewritten. Before, only images named on the page itself were.
+- JPEGs that a PDF compressor deflated a second time (`[/FlateDecode /DCTDecode]`, as iLovePDF writes them) are unwrapped and rewritten instead of skipped.
+- Soft masks follow their images: same pages, same placements, resized with them.
+- Gray photos, and masks that were already JPEGs, become one-channel JPEGs written by the engine itself (`src/lib/engine/grayjpeg.ts`), because canvas only writes three-channel JPEGs. A 2.2 MB mask in that deck is now 0.8 MB. Masks stored losslessly stay lossless.
+- 16-bit images are rewritten as 8-bit instead of skipped.
+- Split estimates count images reached through groups.
+- New synthetic corpus deck, `design-tool-deck.pdf`, with all of these shapes; the Chromium engine check expects it to fit in one file.
+
 ## 0.2.0 — 2026-10-06: on pitch.dog, beta
 
 - Email My Deck is now a page on pitch.dog at `/email-my-deck/`, in the site's type system, nav, footer and theme, marked beta with a short section on how to tell us when it breaks.

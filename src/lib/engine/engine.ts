@@ -1,4 +1,4 @@
-import type { ImageCodec, CodecOutput, CodecSource } from './codec'
+import { inflate, type ImageCodec, type CodecOutput, type CodecSource } from './codec'
 import { collectFormRefs, placementsForPage, type Placement } from './content'
 import { EngineError, MESSAGES, protectedError } from './errors'
 import { inspectionFromJson, inspectWithQpdf, INSPECT_ARGS, looksLikePdf, type ImageRecord, type Inspection } from './inspect'
@@ -218,7 +218,7 @@ export async function compressDocument(input: Uint8Array, budget: number, deps: 
     }, HEARTBEAT_MS)
     try {
       for (const batch of batches(subset, EXTRACT_BATCH_BYTES)) {
-        const sources = extractImages(session, batch.map((plan) => plan.image))
+        const sources = await extractImages(session, batch.map((plan) => plan.image))
         await mapLimit(batch, concurrency, async (plan) => {
           const source = sources.get(plan.image.ref)
           sources.delete(plan.image.ref)
@@ -395,7 +395,7 @@ function* batches(plans: ImagePlan[], limit: number): Generator<ImagePlan[]> {
   let current: ImagePlan[] = []
   let size = 0
   for (const plan of plans) {
-    const extracted = plan.image.kind === 'raw' ? plan.pixels * (plan.image.colorModel === 'gray' ? 1 : 3) : plan.image.bytes
+    const extracted = plan.image.kind === 'raw' ? plan.pixels * (plan.image.colorModel === 'gray' ? 1 : 3) * (plan.image.bitsPerComponent / 8) : plan.image.bytes
     if (current.length && size + extracted > limit) {
       yield current
       current = []
@@ -408,8 +408,11 @@ function* batches(plans: ImagePlan[], limit: number): Generator<ImagePlan[]> {
 }
 
 /** Write the listed streams' data (decoded where lossless filters allow) and read them back. */
-function extractStreams(session: QpdfSession, refs: string[], decodeLevel: 'generalized' | 'specialized', prefix: string): Map<string, Uint8Array> {
-  const result = new Map<string, Uint8Array>()
+/** Stream data as QPDF wrote it, with the filters it could not remove (outermost first). */
+type ExtractedStream = { bytes: Uint8Array; filters: string[] }
+
+function extractStreams(session: QpdfSession, refs: string[], decodeLevel: 'generalized' | 'specialized', prefix: string): Map<string, ExtractedStream> {
+  const result = new Map<string, ExtractedStream>()
   if (!refs.length) return result
   const args = ['--json=2', '--json-key=qpdf', ...refs.map((ref) => `--json-object=${refNumber(ref)}`), '--json-stream-data=file', `--json-stream-prefix=${prefix}`, `--decode-level=${decodeLevel}`, INPUT]
   const { data } = session.json<QpdfJsonDocument>(args)
@@ -421,9 +424,11 @@ function extractStreams(session: QpdfSession, refs: string[], decodeLevel: 'gene
     try {
       const bytes = session.readFile(file)
       const dict = entry.stream?.dict ?? {}
-      // If QPDF could not decode the filters it leaves them in the dictionary; such data is unusable here.
+      // Filters QPDF could not decode stay in the dictionary. It decodes all or none,
+      // so a JPEG wrapped in Flate comes back with both.
       const filters = dict['/Filter']
-      result.set(ref, filters === undefined || filters === '/DCTDecode' || filters === '/DCT' ? bytes : new Uint8Array(0))
+      const remaining = (Array.isArray(filters) ? filters : filters === undefined ? [] : [filters]).map((name) => String(name))
+      result.set(ref, { bytes, filters: remaining })
     } finally {
       session.remove(file)
     }
@@ -438,14 +443,14 @@ function findPlacements(session: QpdfSession, inspection: Inspection): Map<strin
   const streams = extractStreams(session, [...contentRefs, ...forms], 'generalized', '/work/content')
   const source = (ref: string) => {
     const data = streams.get(ref)
-    return data && data.byteLength ? data : null
+    return data && !data.filters.length && data.bytes.byteLength ? data.bytes : null
   }
   const placements = new Map<string, Placement[]>()
   const unknown = new Set<string>()
   for (const page of pages) {
     const found = placementsForPage(graph, page, source)
     if (!found) {
-      for (const image of inspection.images) if (image.pages.includes(page.number)) unknown.add(image.ref)
+      for (const image of inspection.images) if (image.reach.includes(page.number)) unknown.add(image.ref)
       continue
     }
     for (const [ref, list] of found) placements.set(ref, [...(placements.get(ref) ?? []), ...list])
@@ -458,23 +463,57 @@ function findPlacements(session: QpdfSession, inspection: Inspection): Map<strin
     const seen = new Set(placements.get(image.ref)?.map((placement) => placement.page))
     if (image.pages.some((page) => !seen.has(page))) placements.delete(image.ref)
   }
+  // A soft mask is drawn wherever its images are. If any of them keeps full size, so does the mask.
+  for (const image of inspection.images) {
+    if (!image.maskOf?.length) continue
+    const parents = image.maskOf.map((ref) => placements.get(ref))
+    if (unknown.has(image.ref) || parents.some((list) => !list)) {
+      placements.delete(image.ref)
+      continue
+    }
+    placements.set(image.ref, [...(placements.get(image.ref) ?? []), ...parents.flatMap((list) => list ?? [])])
+  }
   return placements
 }
 
-function extractImages(session: QpdfSession, images: ImageRecord[]): Map<string, CodecSource> {
+async function extractImages(session: QpdfSession, images: ImageRecord[]): Promise<Map<string, CodecSource>> {
   const raw = extractStreams(session, images.map((image) => image.ref), 'specialized', '/img/src')
   const sources = new Map<string, CodecSource>()
   for (const image of images) {
-    const bytes = raw.get(image.ref)
-    if (!bytes || !bytes.byteLength) continue
+    const extracted = raw.get(image.ref)
+    raw.delete(image.ref)
+    if (!extracted || !extracted.bytes.byteLength) continue
+    let bytes = extracted.bytes
     const components = image.colorModel === 'gray' ? 1 : 3
     if (image.kind === 'jpeg') {
+      const { filters } = extracted
+      const last = filters[filters.length - 1]
+      if (filters.length && last !== '/DCTDecode' && last !== '/DCT') continue
+      try {
+        // Unwrap Flate layers around the JPEG ourselves; QPDF leaves them when it keeps the JPEG.
+        for (const filter of filters.slice(0, -1)) {
+          if (filter !== '/FlateDecode' && filter !== '/Fl') throw new Error(`Cannot unwrap ${filter}`)
+          bytes = await inflate(bytes)
+        }
+      } catch {
+        continue
+      }
       const info = readJpegInfo(bytes)
       // The JPEG itself must agree with the PDF's description, or the browser would decode something else.
       if (!info || info.components !== components || info.width !== image.width || info.height !== image.height) continue
       sources.set(image.ref, { kind: 'jpeg', bytes })
     } else {
-      if (bytes.byteLength < image.width * image.height * components) continue
+      if (extracted.filters.length) continue
+      const samples = image.width * image.height * components
+      if (image.bitsPerComponent === 16) {
+        // Keep the high byte of each big-endian 16-bit sample; the result is written as 8-bit.
+        if (bytes.byteLength < samples * 2) continue
+        const narrow = new Uint8Array(samples)
+        for (let index = 0; index < samples; index += 1) narrow[index] = bytes[index * 2]
+        sources.set(image.ref, { kind: 'raw', bytes: narrow, width: image.width, height: image.height, components })
+        continue
+      }
+      if (bytes.byteLength < samples) continue
       sources.set(image.ref, { kind: 'raw', bytes, width: image.width, height: image.height, components })
     }
   }
@@ -529,7 +568,7 @@ function rewrittenDict(original: JsonDict, target: ImageTarget): JsonDict {
   dict['/Width'] = target.width
   dict['/Height'] = target.height
   dict['/BitsPerComponent'] = 8
-  dict['/Filter'] = target.format === 'jpeg' ? '/DCTDecode' : '/FlateDecode'
+  dict['/Filter'] = target.format === 'jpeg' || target.format === 'jpeg-gray' ? '/DCTDecode' : '/FlateDecode'
   return dict
 }
 
