@@ -111,7 +111,9 @@ function browserCanRunEngine(): boolean {
 }
 
 // A detached link, so the download never bubbles through page-level click
-// listeners. The object URL carries no file name.
+// listeners. The object URL carries no file name. It stays valid for a
+// minute: Safari on iPhone asks before downloading, and a URL revoked while
+// that question is up gives a failed download.
 function download(bytes: Uint8Array, name: string) {
   const url = URL.createObjectURL(new Blob([bytes.slice().buffer], { type: 'application/pdf' }))
   const anchor = document.createElement('a')
@@ -119,7 +121,7 @@ function download(bytes: Uint8Array, name: string) {
   anchor.download = name
   anchor.rel = 'noopener'
   anchor.click()
-  window.setTimeout(() => URL.revokeObjectURL(url), 4000)
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
 }
 
 async function copyText(text: string): Promise<boolean> {
