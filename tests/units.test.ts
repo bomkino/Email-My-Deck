@@ -1,8 +1,8 @@
 import jpeg from 'jpeg-js'
 import { describe, expect, it, vi } from 'vitest'
 import type { CodecSource, ImageCodec } from '../src/lib/engine/codec'
-import { placementsForPage, scanContent } from '../src/lib/engine/content'
-import { mapLimit } from '../src/lib/engine/engine'
+import { entryScales, formatNumber, placementsForPage, roundPaths, scanContent, untrackedDrawing } from '../src/lib/engine/content'
+import { mapLimit, splitReasonFor } from '../src/lib/engine/engine'
 import { MESSAGES, toEngineError } from '../src/lib/engine/errors'
 import type { ImageRecord, PageInfo } from '../src/lib/engine/inspect'
 import { inspectionFromJson, looksLikePdf } from '../src/lib/engine/inspect'
@@ -47,6 +47,58 @@ describe('content stream scanner', () => {
     ])
     // A content stream that cannot be read makes the whole page unknown.
     expect(placementsForPage(graph, page, () => null)).toBeNull()
+  })
+})
+
+describe('why a deck cannot fit one email', () => {
+  it('names what fills the email at the lightest version', () => {
+    expect(splitReasonFor({ photosBytes: 60, keptImagesBytes: 10, otherBytes: 30 }, 100)).toBe('quality-floor')
+    expect(splitReasonFor({ photosBytes: 5, keptImagesBytes: 20, otherBytes: 80 }, 100)).toBe('not-photos')
+    expect(splitReasonFor({ photosBytes: 5, keptImagesBytes: 70, otherBytes: 30 }, 100)).toBe('kept-images')
+  })
+})
+
+describe('path rounding', () => {
+  const decode = (bytes: Uint8Array | null) => (bytes ? new TextDecoder('latin1').decode(bytes) : null)
+
+  it('writes numbers in their shortest form', () => {
+    expect(formatNumber(12.3456, 2)).toBe('12.35')
+    expect(formatNumber(0.5, 1)).toBe('.5')
+    expect(formatNumber(-0.25, 1)).toBe('-.3')
+    expect(formatNumber(-0.04, 1)).toBe('0')
+    expect(formatNumber(3.1, 2)).toBe('3.1')
+    expect(formatNumber(100, 2)).toBe('100')
+    expect(formatNumber(-1234.5678, 0)).toBe('-1235')
+  })
+
+  it('rounds path coordinates as finely as the drawing scale needs and leaves every other byte alone', () => {
+    // 20 pixels per unit: two decimals keep 0.1 px. Under the 0.01 matrix, whole units do.
+    const content = text(
+      'q 1 0 0 1 10.123456 20.987654 cm 1.23456 2.34567 m 3.45678 4.56789 l (12.3456 7.8 m) Tj 5.555555 6.666666 7.777777 8.888888 re f Q\n' +
+        'BI /W 1 /H 1 /BPC 8 /CS /G ID \x00 1.23456 2.34567 m\nEI % 1.23456 2.34567 m\n0.01 0 0 0.01 0 0 cm 9.87654 1.11111 m 0.123 l 3 4 l S',
+    )
+    const rounded = roundPaths(content, 20)
+    expect(decode(rounded)).toBe(
+      'q 1 0 0 1 10.123456 20.987654 cm 1.23 2.35 m 3.46 4.57 l (12.3456 7.8 m) Tj 5.56 6.67 7.78 8.89 re f Q\n' +
+        'BI /W 1 /H 1 /BPC 8 /CS /G ID \x00 1.23456 2.34567 m\nEI % 1.23456 2.34567 m\n0.01 0 0 0.01 0 0 cm 10 1 m 0.123 l 3 4 l S',
+    )
+    // Same structure for everything that reads the stream afterwards.
+    expect(scanContent(rounded!)).toEqual(scanContent(content))
+    expect(roundPaths(text('1 2 m 3 4 l S'), 20)).toBeNull()
+  })
+
+  it('carries matrices across a page’s content streams', () => {
+    expect(entryScales(['q 2 0 0 2 0 0 cm', '1 1 m Q', '3 0 0 3 0 0 cm', ''].map(text))).toEqual([1, 2, 1, 3])
+  })
+
+  it('keeps drawings that soft masks and patterns use exact, even when a page also draws them', () => {
+    const graph = new PdfGraph({
+      'obj:5 0 R': { stream: { dict: { '/Subtype': '/Form', '/Resources': {} } } },
+      'obj:6 0 R': { stream: { dict: { '/PatternType': 1, '/Resources': {} } } },
+      'obj:7 0 R': { stream: { dict: { '/Subtype': '/Form', '/Resources': {} } } },
+    })
+    const resources = { '/XObject': { '/Fm0': '5 0 R', '/Fm1': '7 0 R' }, '/ExtGState': { '/G0': { '/SMask': { '/G': '5 0 R' } } }, '/Pattern': { '/P0': '6 0 R' } }
+    expect([...untrackedDrawing(graph, resources).forms].sort()).toEqual(['5 0 R', '6 0 R'])
   })
 })
 
@@ -129,6 +181,8 @@ describe('quality ladder', () => {
       [2880, 1620, 0.82],
       [2400, 1350, 0.8],
       [1920, 1080, 0.76],
+      [1680, 945, 0.72],
+      [1440, 810, 0.66],
     ])
   })
 
@@ -171,8 +225,8 @@ describe('quality ladder', () => {
 
   it('encodes the best rung expected to fit plus a safety net, or plans a split', () => {
     const budget = 100
-    expect(chooseRungs([200, 120, 90, 70], budget)).toEqual({ encode: [2, 3], expected: 2 })
-    expect(chooseRungs([200, 102, 90, 70], budget)).toEqual({ encode: [1, 2, 3], expected: 2 })
+    // The rung above is encoded too: its sharper images fill the room left.
+    expect(chooseRungs([200, 140, 90, 70], budget)).toEqual({ encode: [1, 2, 3], expected: 2 })
     expect(chooseRungs([90, 80, 70, 60], budget)).toEqual({ encode: [0, 1], expected: 0 })
     // Nothing fits: the sharpest rung that needs no more emails than the floor, plus the floor.
     expect(chooseRungs([400, 250, 175, 170], budget)).toEqual({ encode: [2, 3], expected: null })

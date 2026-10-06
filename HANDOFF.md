@@ -29,7 +29,7 @@ The product promise is intentionally narrow:
 
 The first question was whether the PDF should be uploaded to a server. The answer was no: browser-only processing is the clearest privacy boundary and keeps hosting costs close to zero. The tradeoff is browser memory and compute, so the page has an explicit size budget and a watchdog that stops a job once it stops reporting progress.
 
-The second question was whether to optimize aggressively until a single file fits. The answer was no: presentations are judged visually, and a technically successful but unreadable deck is a false success. The app tries conservative changes first and splits when the quality floor wins.
+The second question was whether to optimize aggressively until a single file fits. The answer was no: presentations are judged visually, and a technically successful but unreadable deck is a false success. The app tries conservative changes first and splits when the quality floor wins. (2026-10-06: the team moved this line. The engine now squeezes down to a 1440 px floor and rounds invisible drawing precision before it splits; see DECISIONS.md.)
 
 The third question was whether to use one universal attachment target. The answer was profiles. Mailbox limits and gateway behavior vary, and Gmail’s larger attachment behavior is useful only when both sides support it. The Gmail option is therefore conditional in the UI.
 

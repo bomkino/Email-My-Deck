@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { deflateSync } from 'node:zlib'
+import { deflateSync, inflateSync } from 'node:zlib'
 import { PDFDocument, PDFName, PDFRawStream } from 'pdf-lib'
 import { describe, expect, it } from 'vitest'
 import { toOutcome } from '../src/lib/compression'
@@ -84,6 +84,34 @@ describe('compressDocument', () => {
     expect(await pageCount(result.bytes)).toBe(5)
   })
 
+  it('fills the room a rung leaves with sharper photos, measuring the result', async () => {
+    // Drawn at half the slide: the sharpest rung keeps 1920 px, the next 1440 px.
+    const input = await photoDeck({ pages: 4, image: [2400, 1350], drawn: [480, 270] })
+    const budget = Math.floor(input.byteLength * 0.35)
+    const result = await compressDocument(input.slice(), budget, deps())
+    expect(result.kind).toBe('images')
+    expect(result.bytes.byteLength).toBeLessThanOrEqual(budget)
+    const fitted = result.attempts.find((attempt) => attempt.fits && !attempt.filled)!
+    const filled = result.attempts.at(-1)!
+    expect(filled.filled).toBeGreaterThan(0)
+    expect(filled.bytes).toBe(result.bytes.byteLength)
+    expect(filled.bytes).toBeGreaterThan(fitted.bytes)
+    // The receipt names the lightest rung any photo ended on.
+    expect(result.rung?.longEdgePx).toBe(2880)
+    const widths = (await imageSizes(result.bytes)).map(([width]) => width).sort()
+    expect(widths).toContain(1920)
+    expect(widths).toContain(1440)
+  })
+
+  it('resizes photos that every page names but only one draws', async () => {
+    // Every page lists all five photos; each draws one, at a quarter of the slide.
+    const input = await photoDeck({ pages: 5, image: [1600, 900], drawn: [240, 135], sharedResources: true })
+    const result = await compressDocument(input.slice(), Math.floor(input.byteLength * 0.6), deps())
+    expect(result.kind).toBe('images')
+    expect(result.images.resized).toBe(5)
+    for (const [width] of await imageSizes(result.bytes)) expect(width).toBeLessThanOrEqual(960)
+  })
+
   it('asks for a split when even the floor does not fit, and the split prunes shared resources', async () => {
     const input = await photoDeck({ pages: 6, image: [1600, 900], sharedResources: true })
     const budget = Math.floor(input.byteLength / 3.5)
@@ -91,6 +119,9 @@ describe('compressDocument', () => {
     const result = await compressDocument(input.slice(), budget, { ...deps([], log) }, { keepSession: true })
     expect(result.kind).toBe('split-needed')
     expect(result.splitReason).toBe('quality-floor')
+    // Photos fill it; nothing else could have made room.
+    expect(result.weight?.photosBytes).toBeGreaterThan(budget)
+    expect(result.weight?.keptImagesBytes).toBe(0)
     expect(result.session && result.path).toBeTruthy()
     const parts = await splitDocument({ session: result.session!, path: result.path! }, budget, { qpdf: nodeQpdf })
     expect(parts.length).toBeGreaterThan(1)
@@ -227,6 +258,65 @@ describe('decks from design tools', () => {
     }
     expect(gray).toBe(1)
     expect(await pageCount(result.bytes)).toBe(3)
+  })
+})
+
+/** Outlined-text-like path data: `count` points with six decimals, from a fixed seed. */
+function pathData(count: number, seed: number): string {
+  let state = seed
+  const next = () => ((state = (state * 1664525 + 1013904223) >>> 0) / 2 ** 32) * 900
+  const parts: string[] = []
+  for (let index = 0; index < count; index += 1) parts.push(`${next().toFixed(6)} ${next().toFixed(6)} ${index % 7 ? 'l' : 'm'}`)
+  return `${parts.join('\n')} f`
+}
+
+/** A slide of outlined text drawn three ways: on the page, in a group at half size, and in a group a soft mask also uses. */
+async function vectorDeck(): Promise<Uint8Array> {
+  const document = await PDFDocument.create()
+  const context = document.context
+  const photo = await document.embedJpg(photoJpeg(1600, 900, 3))
+  const group = (marker: string, seed: number) =>
+    context.register(context.flateStream(`% ${marker}\n${pathData(12_000, seed)}`, { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 960, 540], Resources: {} } as never))
+  const half = group('half size', 2)
+  const masked = group('mask group', 3)
+  const page = document.addPage([960, 540])
+  page.node.set(PDFName.of('Resources'), context.obj({ XObject: { Im0: photo.ref, Fm0: half, Fm1: masked }, ExtGState: { GS0: { SMask: { S: 'Luminosity', G: masked } } } } as never))
+  const content = `% page\nq 240 0 0 135 0 0 cm /Im0 Do Q\n${pathData(12_000, 1)}\nq 0.5 0 0 0.5 0 0 cm /Fm0 Do Q\nq /GS0 gs /Fm1 Do Q`
+  page.node.set(PDFName.of('Contents'), context.register(context.flateStream(content)))
+  return document.save({ useObjectStreams: false })
+}
+
+/** Decoded content of the stream that starts with `% marker`. */
+async function streamWithMarker(bytes: Uint8Array, marker: string): Promise<string | null> {
+  const document = await PDFDocument.load(bytes)
+  for (const [, object] of document.context.enumerateIndirectObjects()) {
+    if (!(object instanceof PDFRawStream)) continue
+    const filter = object.dict.get(PDFName.of('Filter'))?.toString()
+    if (filter && filter !== '/FlateDecode') continue
+    const data = Buffer.from(filter ? inflateSync(object.contents) : object.contents).toString('latin1')
+    if (data.startsWith(`% ${marker}\n`)) return data
+  }
+  return null
+}
+
+const decimalsIn = (content: string) => Math.max(...(content.match(/\.\d+/g) ?? []).map((digits) => digits.length - 1))
+
+describe('drawings', () => {
+  it('rounds path coordinates finer than a screen shows, except where a soft mask draws them', async () => {
+    const input = await vectorDeck()
+    const budget = Math.floor(input.byteLength * 0.6)
+    const result = await compressDocument(input.slice(), budget, deps())
+    expect(result.kind).toBe('images')
+    expect(result.bytes.byteLength).toBeLessThanOrEqual(budget)
+    expect(result.paths?.drawings).toBe(2)
+    expect(result.paths?.savedBytes).toBeGreaterThan(64 * 1024)
+    // A 960 pt slide shown 3840 px wide: 4 px per point, so two decimals keep 0.1 px; at half size, one.
+    const page = (await streamWithMarker(result.bytes, 'page'))!
+    expect(decimalsIn(page.slice(page.indexOf('Q') + 1))).toBe(2)
+    expect(page).toContain('q 240 0 0 135 0 0 cm /Im0 Do Q')
+    expect(decimalsIn((await streamWithMarker(result.bytes, 'half size'))!)).toBe(1)
+    expect(decimalsIn((await streamWithMarker(result.bytes, 'mask group'))!)).toBe(6)
+    expect(await pageCount(result.bytes)).toBe(1)
   })
 })
 

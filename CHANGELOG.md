@@ -7,6 +7,17 @@
 - Nothing is split until the visitor chooses to. The split card starts at parts of about the same size, lets them move each split with a slider, and shows every part's size before anything is made. A part that would be too big is flagged, and the button waits until it fits. From the parts, "Change where it splits" goes back to the choice.
 - Engine: a result that doesn't fit carries `splitPlan` (`sharedBytes`, `pageBytes`), measured after QPDF gives each page only the resources it uses. On a 66-slide design-tool deck it lands within 2% of the real parts. `split` takes `breakAfter` to split exactly there and marks each part's `fits`. A split the visitor starts gets the whole progress bar.
 
+### Engine: squeeze before splitting
+
+Splitting is now the last resort. In Chrome, all eight audit decks and that 24 MB Figma deck fit one email at both 20 MB and 25 MB. The Figma deck comes back as 13.9 MB for strict 20 MB mailboxes (no photo below 1680 px across the slide, most at 1920) and 17.3 MB for 25 MB ones (none below 1920, most at 2400). Before, it was two emails at 20 MB.
+
+- Two lighter rungs: the ladder is now 3840, 2880, 2400, 1920, 1680 and a 1440 px floor, the lightest we still call good-looking on a laptop.
+- Leftover room goes back into photos. Once a rung fits, photos move up to sharper rungs one at a time, most slide covered per byte first, and the result is measured again. When estimates ran high and real room is left, the next sharper rung is encoded for the whole deck and filled again. A deck that fits at the sharpest rung is never padded.
+- Drawings lose precision nobody can see. Path coordinates on pages and in groups are rounded so no point moves more than 0.1 px at 3840 px across the slide, following each drawing's own scale. Groups used by soft masks, patterns or Type 3 glyphs, and pages we cannot follow, stay exact. The Figma deck's outlined text is 2.2 MB lighter. Under 64 KB saved in all, nothing is touched.
+- Decks whose pages share one resource dictionary now get their photos resized: an image a page names but never draws no longer blocks it, unless something on that page could draw it in a way we do not follow.
+- When even the floor cannot fit, the result says why (`splitReason`: `quality-floor`, `not-photos`, `kept-images` or `browser-cannot-resize`) and where the lightest version's bytes are (`weight`: photos, images kept as they are, everything else).
+- The receipt names the lightest rung any photo ended on, and `receipt.paths` says how many drawings were rounded and what that saved.
+
 ### Engine: decks from design tools
 
 A 24 MB Figma deck run through iLovePDF came back as two emails (17.5 + 6.9 MB), because the engine never touched most of its pictures. It now comes back as one 16.9 MB file in Chrome.
