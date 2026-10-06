@@ -453,6 +453,8 @@ function CantFit({ file, parts, outcome, profileId, weights, headingRef, onGmail
   const tryGmail = profileId !== 'gmail-advanced' && reason !== 'browser-cannot-resize' && weights.budget < gmailBudget && lightest.bytes <= gmailBudget
   const plan = parts.map((part, index) => `Email ${index + 1} of ${parts.length}\nSubject: ${splitCopy.subject(name, index + 1, parts.length)}\nAttach: ${part.name}\n\n${splitCopy.emailBody(name, index + 1, parts.length, part.startPage, part.endPage)}`).join('\n—\n\n')
   const downloadAll = () => parts.forEach((part, index) => window.setTimeout(() => download(part.bytes, part.name), index * 450))
+  // The page's send-a-link guide, when the page around the tool has one.
+  const hasGuide = Boolean(document.getElementById('send-a-link'))
   return <section className="panel panel--split" aria-labelledby="emd-split-title">
     <p className="eyebrow" data-pd-type="metadata">{cantFitCopy.eyebrow}</p>
     <h2 id="emd-split-title" ref={headingRef} tabIndex={-1} data-pd-type="heading.subsection">{cantFitCopy.title}</h2>
@@ -463,7 +465,7 @@ function CantFit({ file, parts, outcome, profileId, weights, headingRef, onGmail
     <div className="way way--pick">
       <h3 className="way-title" data-pd-type="title.card">{cantFitCopy.linkTitle}<em className="badge">{cantFitCopy.linkBadge}</em></h3>
       <p data-pd-type="body.default">{cantFitCopy.linkBody}</p>
-      <a className="way-more" href="#send-a-link" data-pd-type="body.small">{cantFitCopy.linkMore}<Icon name="arrow" size={16} /></a>
+      {hasGuide && <a className="way-more" href="#send-a-link" data-pd-type="body.small">{cantFitCopy.linkMore}<Icon name="arrow" size={16} /></a>}
     </div>
 
     <div className="way">
