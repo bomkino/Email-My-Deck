@@ -1,6 +1,37 @@
 import type { TargetProfileId } from '../lib/profiles'
+import { formatSize } from './format'
 
 // Every word the tool says lives here, so voice edits never touch logic.
+
+const capitalise = (text: string) => text.charAt(0).toUpperCase() + text.slice(1)
+
+/** The mailbox the visitor picked, as a sentence names it. */
+export function mailboxName(profileId: TargetProfileId, maxMessageBytes: number): string {
+  if (profileId === 'gmail-advanced') return 'Gmail to Gmail'
+  return `a ${formatSize(maxMessageBytes)} ${profileId === 'custom' ? 'limit' : 'mailbox'}`
+}
+
+/** Sizes for the weigh-in, all in bytes. `email` is what the deck weighs once it's packed into an email. */
+export type Weights = { deck: number; email: number; limit: number; budget: number; mailbox: string; conditional: boolean }
+
+export type WeighIn = 'fits' | 'looks-like-it-fits' | 'over'
+
+// A deck under the limit can still be too big: the email is about a third
+// heavier than the file. This is the moment people get caught out.
+export const weighInFor = ({ deck, limit, budget, conditional }: Weights): WeighIn =>
+  deck <= budget ? 'fits' : !conditional && deck < limit ? 'looks-like-it-fits' : 'over'
+
+// Said the moment a deck is dropped, before any work starts.
+export function weighInLine(weights: Weights): string {
+  const { deck, email, budget, mailbox, conditional } = weights
+  const kind = weighInFor(weights)
+  if (conditional) return kind === 'fits'
+    ? `Gmail to Gmail takes decks up to ${formatSize(budget)}. At ${formatSize(deck)}, this one fits, so we’re only checking it.`
+    : `Gmail to Gmail takes decks up to ${formatSize(budget)}, so we’re bringing this one down to that.`
+  if (kind === 'fits') return `${formatSize(deck)} on your device, about ${formatSize(email)} as an email. That fits ${mailbox}, so we’re only checking it.`
+  if (kind === 'looks-like-it-fits') return `${formatSize(deck)} looks like it fits ${mailbox}. It doesn’t: packing it into an email adds about a third, so it would arrive as about ${formatSize(email)}. We’re bringing it under ${formatSize(budget)}.`
+  return `As an email it would weigh about ${formatSize(email)}. ${capitalise(mailbox)} takes decks up to ${formatSize(budget)}, so we’re bringing it under that.`
+}
 
 export const mailboxCopy: Record<TargetProfileId, { label: string; detail: (budget: string) => string; badge?: string }> = {
   'common-25': {
@@ -113,9 +144,9 @@ export const commentary: Record<CommentaryKey, string[]> = {
     'Same slides, same order, same page sizes. Checking anyway. We’re like that.',
   ],
   split: [
-    'One email can’t carry all of this without squashing it, so your deck is getting a travel companion or two.',
+    'One email can’t carry all of this without squashing it, so we’re packing a set of parts, just in case.',
     'Splitting between slides, never through one. Nobody gets cut in half.',
-    'Two emails with sharp slides beat one email that makes someone squint. It wasn’t a close vote.',
+    'Parts are plan B. Plan A is waiting on the next screen.',
   ],
   any: [
     'Your deck has no idea any of this is happening. Best not to tell it.',
@@ -174,6 +205,17 @@ export const readyCopy = {
   title: 'Ready to attach.',
   fitsTitle: 'Good news: it already fits.',
   fitsBody: 'Attach your original exactly as it is. We didn’t change a byte.',
+  // The confirmation under "it already fits": what it weighs on the way.
+  fitsWeight: ({ deck, email, mailbox, conditional }: Weights) => conditional
+    ? `At ${formatSize(deck)}, it’s within what Gmail to Gmail takes.`
+    : `At ${formatSize(deck)}, it arrives as about ${formatSize(email)} of email. That fits ${mailbox}, with room left for your message.`,
+  // Above the receipt: why it had to change at all.
+  // `weights` are the original's.
+  madeRoom: (weights: Weights) => {
+    if (weights.conditional) return 'Here’s what we changed to get it under what Gmail to Gmail takes:'
+    if (weighInFor(weights) === 'looks-like-it-fits') return `${formatSize(weights.deck)} looked like it would fit ${weights.mailbox}, but as an email it would have weighed about ${formatSize(weights.email)}. Here’s what we changed to get it in:`
+    return `As an email it would have weighed about ${formatSize(weights.email)}. Here’s what we changed to get it in:`
+  },
   stamp: 'Fits',
   stampFits: 'Already fits',
   download: 'Download email version',
@@ -192,7 +234,7 @@ const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : 
 
 type ReceiptLike = {
   candidate: { notes: string[] }
-  receipt?: { lossless: boolean; longEdgePx?: number; images: { resized: number; resaved: number } }
+  receipt?: { lossless: boolean; longEdgePx?: number; images: { resized: number; resaved: number; untouched?: number } }
 }
 
 // The ready screen's "what we did" lines, from what the engine measured.
@@ -203,16 +245,40 @@ export function whatWeDid({ candidate, receipt }: ReceiptLike): string[] {
   const lines: string[] = []
   if (resized && receipt.longEdgePx) lines.push(`Shrank ${count(resized, 'photo', 'photos')} that were bigger than they needed to be, to ${receipt.longEdgePx.toLocaleString('en')} pixels across the slide.`)
   if (resaved) lines.push(`Re-saved ${count(resaved, 'photo', 'photos')} a little lighter.`)
+  if (receipt.images.untouched) lines.push(`Left ${count(receipt.images.untouched, 'photo', 'photos')} exactly as ${receipt.images.untouched === 1 ? 'it was' : 'they were'}.`)
   lines.push('Text, fonts and links weren’t touched.')
   return lines
 }
 
+// When one email can't carry it. Say so plainly, say why, then give two
+// ways out: a link keeps the deck whole, parts keep it in the inbox.
+export const cantFitCopy = {
+  eyebrow: 'Too big for one email',
+  title: 'We can’t get this one into a single email.',
+  reason: (reason: string | undefined, lightest: string, weights: Weights) => {
+    const takes = `${capitalise(weights.mailbox)} takes decks up to ${formatSize(weights.budget)}.`
+    if (reason === 'browser-cannot-resize') return `This browser can’t resize photos, and photos are where the room usually is. The lightest it can make this deck is ${lightest}. ${takes} Chrome or Brave on a laptop may well fit it in one.`
+    if (reason === 'not-photos') return `Most of its weight isn’t in photos. It’s in fonts, vector artwork or video, which we keep exactly as they are, so the lightest we can make it is ${lightest}. ${takes}`
+    if (reason === 'quality-floor') return `The lightest we can make it without blurring your slides is ${lightest}. ${takes} Getting the rest off would mean blurry photos, and nobody should have to squint at your deck.`
+    return `The lightest we can make it is ${lightest}. ${takes}`
+  },
+  ways: 'So you may have to split it. Or keep it whole and send a link.',
+  linkTitle: 'Send one link',
+  linkBadge: 'Our pick',
+  linkBody: 'Your whole deck, full quality, in one piece. Upload your original to Google Drive, then share it like this:',
+  linkSteps: [
+    'Right-click the file and choose Share.',
+    'Under General access, pick Anyone with the link, as a Viewer.',
+    'Copy the link and paste it into your email.',
+  ],
+  linkMore: 'WeTransfer, Google Drive and Dropbox, compared',
+  partsTitle: (count: number) => `Or send it in ${count} emails`,
+  partsBody: (count: number, mailbox: string) => `Every slide stays sharp, and each part fits ${mailbox}. Your recipient gets ${count} emails and opens them in order.`,
+  gmailHint: (lightest: string) => `Sending from Gmail to Gmail or Google Workspace? At ${lightest}, it may fit in one.`,
+  gmailAction: 'Try Gmail to Gmail',
+}
+
 export const splitCopy = {
-  eyebrow: 'Split, not smudged',
-  title: (count: number) => `This one goes in ${count} emails.`,
-  body: (count: number, reason?: string) => `${reason === 'browser-cannot-resize'
-    ? 'This browser can’t resize photos, so we split the deck rather than squash it. Chrome or Brave on a laptop may fit it in one.'
-    : 'Squeezing it into one file would have made your slides blurry, so we split it instead.'} ${count === 2 ? 'Both parts stay' : `All ${count} parts stay`} sharp, and each one fits the limit you picked.`,
   downloadAll: (count: number) => `Download all ${count}`,
   download: 'Download',
   planTitle: 'Your email plan',
