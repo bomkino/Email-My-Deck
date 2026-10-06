@@ -161,7 +161,7 @@
         <article class="card">
           <p class="card-index" data-pd-type="data">Open</p>
           <h3 data-pd-type="title.card">Every line is public.</h3>
-          <p data-pd-type="body.default">The code is <a href="https://github.com/bomkino/Email-My-Deck">on GitHub</a>, so you, or your most suspicious friend, can check everything on this page. It stands on QPDF, an open-source project people have spent years getting right, on Mozilla’s PDF.js when you ask for a flattened deck, and on the image tools already built into your browser. We built the part in between: deciding, deck by deck, what to keep and what to let go.</p>
+          <p data-pd-type="body.default">The code is <a href="https://github.com/bomkino/Email-My-Deck">on GitHub</a>, so you, or your most suspicious friend, can check everything on this page. It stands on QPDF, an open-source project people have spent years getting right, on Mozilla’s PDF.js when you ask for a flattened deck, and on open-source image encoders from Google and others, built to run right in your browser. We built the part in between: deciding, deck by deck, what to keep and what to let go.</p>
         </article>
       </div>
 
@@ -170,13 +170,14 @@
         <div class="nerd-body">
           <div class="nerd-col">
             <h3 data-pd-type="metadata">Where it runs</h3>
-            <p data-pd-type="body.default">Everything happens in a dedicated Web Worker in your tab, with a few helper workers for the photos. QPDF is compiled to WebAssembly and served from this site, not a CDN. Photos are resized and re-saved by your browser’s own image codecs. PDF.js, also served from this site, is only loaded if you ask to flatten. The page’s Content Security Policy only allows connections back to pitch.dog and its analytics hosts, and the code never sends your file to either.</p>
+            <p data-pd-type="body.default">Everything happens in a dedicated Web Worker in your tab, with a few helper workers for the photos. QPDF is compiled to WebAssembly and served from this site, not a CDN. Photos are resized with Lanczos3 and re-saved with Google’s jpegli, both compiled to WebAssembly and served from this site too; if your browser can’t run them, its own image codecs step in. PDF.js, also served from this site, is only loaded if you ask to flatten. The page’s Content Security Policy only allows connections back to pitch.dog and its analytics hosts, and the code never sends your file to either.</p>
             <h3 data-pd-type="metadata">The pipeline</h3>
             <ol class="nerd-list" data-pd-type="body.default">
               <li>Read the structure with QPDF’s JSON output: pages, page sizes, every image and how big it’s actually drawn, and anything we refuse to rewrite (passwords, change restrictions, form fields, signatures, embedded files, JavaScript).</li>
               <li>If the original already fits, you get the original bytes, untouched.</li>
               <li>QPDF lossless pass, when it could plausibly be enough: object streams, recompressed streams, no visible change.</li>
               <li>A ladder of 3840, 2880, 2400, 1920 and 1680 pixels across the slide, down to a 1440 px floor. Each rung starts from the original, and the sharpest one that fits wins. Room left over goes back into the photos that cover the most slide per byte. Each image is resized or re-saved once and written back by object number, so text, fonts and links are never re-rendered.</li>
+              <li>Every photo gets the lightest setting that still looks right at its rung: jpegli tries a few, and SSIMULACRA2, a measure of how different two pictures look to people, scores the busiest and the smoothest parts of each try against the resized original. No photo comes out heavier than your browser alone would have made it. Lossless parts are packed with libdeflate at its tightest setting.</li>
               <li>Drawings and outlined text lose precision nobody can see: path coordinates are rounded so no point moves more than 0.1 px at 3840 px across, and only when that saves at least 64 KB.</li>
               <li>Verify: reopen the result and compare page count, every page size and the file’s structure with the original.</li>
               <li>Still too big at the floor? We say why, and you choose: a link, parts split after the slides you pick (every part measured), or flattening. To flatten, PDF.js draws each slide, and each one is re-saved at the smallest size that still scores as clear at 1920 px across.</li>

@@ -4,7 +4,7 @@
 // assets (type system, nav, analytics) by absolute path, so it only looks
 // right when served from pitch.dog or a copy of its main-site folder.
 import { execFileSync } from 'node:child_process'
-import { copyFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const outDir = 'dist-pitchdog'
@@ -35,6 +35,14 @@ for (const [from, to] of [
   ['wasm/LICENSE_JBIG2', 'LICENSE_JBIG2'],
   ['wasm/LICENSE_PDFJS_JBIG2', 'LICENSE_PDFJS_JBIG2'],
 ]) copyFileSync(join(pdfjs, from), join(outDir, 'licenses', 'pdfjs', to))
+// The WebAssembly image encoders (jpegli, SSIMULACRA2, libdeflate, Lanczos3) and what is linked into them.
+const encoders = join(outDir, 'licenses', 'encoders')
+mkdirSync(encoders, { recursive: true })
+for (const file of readdirSync('scripts/codecs/licenses')) copyFileSync(join('scripts/codecs/licenses', file), join(encoders, file))
+copyFileSync('scripts/codecs/jpegli/LICENSES.md', join(encoders, 'jpegli-LICENSES.md'))
+copyFileSync('scripts/codecs/ssimulacra2/LICENSES.md', join(encoders, 'ssimulacra2-LICENSES.md'))
+copyFileSync('node_modules/@jsquash/resize/LICENSE', join(encoders, 'jsquash-resize-LICENSE'))
+copyFileSync('node_modules/@jsquash/resize/lib/resize/LICENSE.codec.md', join(encoders, 'resize-crate-LICENSE.md'))
 
 writeFileSync(join(outDir, 'BUILD.json'), `${JSON.stringify({
   source: 'https://github.com/bomkino/Email-My-Deck',

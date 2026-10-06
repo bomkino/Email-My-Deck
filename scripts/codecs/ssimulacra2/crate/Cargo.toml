@@ -1,0 +1,28 @@
+[package]
+name = "ssimulacra2-wasm"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "BSD-2-Clause"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+
+[dependencies]
+ssimulacra2 = { version = "=0.5.1", default-features = false }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+debug = false
+strip = true
+
+# Vendored + patched copies, fetched and sha256-verified by ../build.sh.
+# v_frame: drop the unconditional wasm-bindgen dependency on wasm32-unknown-unknown.
+# ssimulacra2: see ../patches/ssimulacra2-0.5.1-*.patch
+[patch.crates-io]
+v_frame = { path = "../vendor/v_frame-0.3.9" }
+ssimulacra2 = { path = "../vendor/ssimulacra2-0.5.1" }

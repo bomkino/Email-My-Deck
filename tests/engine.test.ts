@@ -1,8 +1,10 @@
 // @vitest-environment node
+import { readFileSync } from 'node:fs'
 import { deflateSync, inflateSync } from 'node:zlib'
 import { PDFDocument, PDFName, PDFRawStream } from 'pdf-lib'
 import { describe, expect, it } from 'vitest'
 import { toOutcome } from '../src/lib/compression'
+import { createDeflate } from '../src/lib/encoders/deflate'
 import type { CodecOutput } from '../src/lib/engine/codec'
 import { compressDocument, type EngineDeps } from '../src/lib/engine/engine'
 import { EngineError } from '../src/lib/engine/errors'
@@ -317,6 +319,19 @@ describe('drawings', () => {
     expect(decimalsIn((await streamWithMarker(result.bytes, 'half size'))!)).toBe(1)
     expect(decimalsIn((await streamWithMarker(result.bytes, 'mask group'))!)).toBe(6)
     expect(await pageCount(result.bytes)).toBe(1)
+  })
+
+  it('with a stronger Flate, also recompresses the drawings rounding leaves exact, losslessly', async () => {
+    const input = await vectorDeck()
+    const budget = Math.floor(input.byteLength * 0.6)
+    const strong = await createDeflate(readFileSync(new URL('../src/lib/encoders/wasm/libdeflate.wasm', import.meta.url)))
+    const plain = await compressDocument(input.slice(), budget, deps())
+    const result = await compressDocument(input.slice(), budget, { ...deps(), deflate: strong })
+    expect(result.bytes.byteLength).toBeLessThan(plain.bytes.byteLength)
+    // Only rounded drawings count as rounded; the mask group is smaller but still exact.
+    expect(result.paths?.drawings).toBe(2)
+    expect(await streamWithMarker(result.bytes, 'mask group')).toBe(await streamWithMarker(plain.bytes, 'mask group'))
+    expect(await streamWithMarker(result.bytes, 'page')).toBe(await streamWithMarker(plain.bytes, 'page'))
   })
 })
 

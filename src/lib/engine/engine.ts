@@ -12,6 +12,8 @@ export type EngineDeps = {
   qpdf: QpdfLoader
   /** Null when this browser cannot decode and re-encode images. */
   codec: ImageCodec | null
+  /** Flate for the drawings the engine rewrites; the browser's CompressionStream when absent. */
+  deflate?: (data: Uint8Array) => Promise<Uint8Array>
   onProgress?: (event: ProgressEvent) => void
   now?: () => number
 }
@@ -96,7 +98,7 @@ const CALIBRATION_SHARE = 0.15
 const CALIBRATION_MAX_IMAGES = 8
 const PAGE_TOLERANCE = 0.5
 const HEARTBEAT_MS = 400
-/** Rough codec speed, used only to keep the bar moving while a big image is in flight. */
+/** Rough codec speed until this deck's own images have been timed; used only to keep the bar moving while a big image is in flight. */
 const PIXELS_PER_MS = 25_000
 /** Decoded pixels allowed in flight at once (about 4 bytes each, often twice), so phones are not run out of memory. */
 const MAX_PIXELS_IN_FLIGHT = 64_000_000
@@ -232,7 +234,7 @@ export async function compressDocument(input: Uint8Array, budget: number, deps: 
     .map((image) => planImage(image, placements.get(image.ref), inspection.pages))
     .sort((a, b) => a.firstPage - b.firstPage || refNumber(a.image.ref) - refNumber(b.image.ref))
   // Drawings get the same treatment at every rung: round them once, while the first photos encode.
-  const rounding = roundDrawings(session, inspection, drawings)
+  const rounding = roundDrawings(session, inspection, drawings, deps.deflate ?? deflate, Boolean(deps.deflate))
   rounding.catch(() => {}) // Awaited below; this only keeps an early failure elsewhere from leaving it unhandled.
   let rounded: RoundedDrawings = { objects: {}, streams: 0, savedBytes: 0 }
   let baseBytes = (tidyBytes ?? originalBytes) - plans.reduce((sum, plan) => sum + plan.image.bytes, 0)
@@ -256,6 +258,9 @@ export async function compressDocument(input: Uint8Array, budget: number, deps: 
   const codec = deps.codec
   const concurrency = Math.max(1, codec.concurrency ?? 1)
   let donePixels = 0
+  // Codec speed as measured on this deck (pixels × outputs per ms, per image), so a slow encoder or device still sees the bar creep.
+  let pixelsPerMs = PIXELS_PER_MS
+  let timedImages = 0
 
   /** Decode each image once (several at a time) and encode it at the given rungs. */
   const encodeImages = async (subset: ImagePlan[], rungs: number[], label?: string) => {
@@ -268,7 +273,7 @@ export async function compressDocument(input: Uint8Array, budget: number, deps: 
       const time = now()
       let partial = 0
       for (const [plan, startedAt] of inFlight) {
-        const expectedMs = Math.max(300, (plan.pixels * (1 + rungs.length)) / PIXELS_PER_MS)
+        const expectedMs = Math.max(300, (plan.pixels * (1 + rungs.length)) / pixelsPerMs)
         partial += plan.pixels * 0.9 * (1 - Math.exp(-(time - startedAt) / expectedMs))
       }
       progress.update((donePixels + partial) / totalPixels)
@@ -279,11 +284,18 @@ export async function compressDocument(input: Uint8Array, budget: number, deps: 
         await mapLimit(batch, concurrency, async (plan) => {
           const source = sources.get(plan.image.ref)
           sources.delete(plan.image.ref)
-          inFlight.set(plan, now())
+          const startedAt = now()
+          inFlight.set(plan, startedAt)
           try {
             if (source) await encodeImage(codec, session, plan, source, rungs, outputs, calibration)
           } finally {
             inFlight.delete(plan)
+          }
+          const tookMs = now() - startedAt
+          if (source && tookMs > 0) {
+            const measured = (plan.pixels * (1 + rungs.length)) / tookMs
+            timedImages += 1
+            pixelsPerMs = timedImages === 1 ? measured : pixelsPerMs * 0.7 + measured * 0.3
           }
           const tried = attempted.get(plan.image.ref) ?? new Set<number>()
           for (const rung of rungs) tried.add(rung)
@@ -683,22 +695,25 @@ type RoundedDrawings = { objects: Record<string, StreamUpdate>; streams: number;
  * Round path coordinates in every drawing whose size on the page we know, keep
  * each one only when its compressed stream gets smaller, and stage the new
  * streams for `assemble`. A stream used inside a pattern, soft mask or Type 3
- * glyph, or on a page we could not read, is never touched.
+ * glyph, or on a page we could not read, is never touched. With a stronger
+ * `compress` than the browser's, drawings rounding leaves alone are
+ * recompressed too (losslessly); `streams` counts only the rounded ones.
  */
-async function roundDrawings(session: QpdfSession, inspection: Inspection, drawings: Drawing[]): Promise<RoundedDrawings> {
+async function roundDrawings(session: QpdfSession, inspection: Inspection, drawings: Drawing[], compress: (data: Uint8Array) => Promise<Uint8Array>, recompress: boolean): Promise<RoundedDrawings> {
   const rounded: RoundedDrawings = { objects: {}, streams: 0, savedBytes: 0 }
   for (const drawing of drawings.splice(0)) {
     const dict = inspection.graph.streamDict(drawing.ref)
     const storedBytes = dict ? inspection.graph.number(dict['/Length']) : null
     if (!dict || !storedBytes) continue
-    const content = roundPaths(drawing.bytes, drawing.pixelsPerUnit)
+    const roundedContent = roundPaths(drawing.bytes, drawing.pixelsPerUnit)
+    const content = roundedContent ?? (recompress ? drawing.bytes : null)
     if (!content) continue
     let compressed: Uint8Array
     let before = storedBytes
     try {
-      compressed = await deflate(content)
+      compressed = await compress(content)
       // A stream stored uncompressed would be compressed on writing anyway: compare like with like.
-      if (dict['/Filter'] === undefined) before = Math.min(before, (await deflate(drawing.bytes)).byteLength)
+      if (dict['/Filter'] === undefined) before = Math.min(before, (await compress(drawing.bytes)).byteLength)
     } catch {
       // No compression in this browser: keep every drawing as it is.
       break
@@ -710,7 +725,7 @@ async function roundDrawings(session: QpdfSession, inspection: Inspection, drawi
     delete next['/DecodeParms']
     delete next['/Length']
     rounded.objects[`obj:${drawing.ref}`] = { stream: { dict: next, datafile } }
-    rounded.streams += 1
+    if (roundedContent) rounded.streams += 1
     rounded.savedBytes += before - compressed.byteLength
   }
   // A few bytes are not worth touching anyone's drawings for.

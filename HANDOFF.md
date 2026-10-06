@@ -15,7 +15,7 @@ The product promise is intentionally narrow:
 ## What was built
 
 - A pitch.dog page (`index.html`) with the React tool mounted inside it; every tool string is in `src/ui/copy.ts`.
-- A dedicated module worker for PDF inspection, lossless QPDF tidying, a pixel-based image ladder using the browser's own codecs, measured splitting, progress events and transferable output buffers (rebuilt 2026-10-06; see `src/lib/engine/`).
+- A dedicated module worker for PDF inspection, lossless QPDF tidying, a pixel-based image ladder with WebAssembly encoders (jpegli checked by SSIMULACRA2, Lanczos3, libdeflate; the browser's own codecs as fallback), measured splitting, progress events and transferable output buffers (rebuilt 2026-10-06; see `src/lib/engine/`).
 - Profiles for common 25 MB mailboxes, strict 20 MB limits, conditional Gmail-to-Gmail/Workspace sending, and a custom ceiling.
 - An input budget of 200 MiB (about 210 MB) on ordinary devices and 80 MiB (about 84 MB) on devices reporting 2 GB of memory or less.
 - Conservative MIME/base64 headroom and decimal provider ceilings for common and strict profiles.

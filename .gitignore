@@ -6,3 +6,9 @@ dom.txt
 corpus/*.pdf
 corpus/*.json
 dist-pitchdog/
+.codecs-build/
+scripts/codecs/ssimulacra2/build-out/
+scripts/codecs/ssimulacra2/tools/
+scripts/codecs/ssimulacra2/vendor/
+scripts/codecs/ssimulacra2/crate/target-*/
+scripts/codecs/ssimulacra2/*.wasm

@@ -99,17 +99,70 @@ function drawScaled(surfaces: Surface[], width: number, height: number, readBack
   return canvas
 }
 
-async function render(surfaces: Surface[], output: CodecOutput): Promise<CodecResult> {
-  const readBack = output.format !== 'jpeg'
-  const canvas = drawScaled(surfaces, output.width, output.height, readBack)
-  if (output.format === 'jpeg') {
-    const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: output.quality ?? 0.82 })
-    if (blob.type !== 'image/jpeg') throw new Error('This browser cannot write JPEG images.')
-    return { bytes: new Uint8Array(await blob.arrayBuffer()), width: output.width, height: output.height, format: output.format }
+/**
+ * Optional replacements for the browser's own resizer and encoders (see
+ * src/lib/encoders). `writeJpeg` takes interleaved 8-bit samples (1 = gray,
+ * 3 = RGB) and a quality on the canvas scale (0–1), and must look at least as
+ * good as canvas at it. When `resize` made the samples, it also gets `today`:
+ * the JPEG the browser alone (its own resize and encoder) would have written
+ * for this output, so it can promise never to cost more. `resize` scales RGBA
+ * pixels to exactly the size asked.
+ */
+export type EncoderOverrides = {
+  writeJpeg?: (samples: Uint8Array, width: number, height: number, components: 1 | 3, quality: number, today?: Uint8Array) => Promise<Uint8Array>
+  deflate?: (data: Uint8Array) => Promise<Uint8Array>
+  resize?: (pixels: ImageData, width: number, height: number) => Promise<ImageData>
+}
+
+/**
+ * The JPEG the browser's own encoder writes for these samples (gray through
+ * the engine's one-channel encoder): what an image cost before the
+ * WebAssembly encoders, so they can promise never to cost more.
+ */
+export async function browserJpeg(samples: Uint8Array, width: number, height: number, components: 1 | 3, quality: number): Promise<Uint8Array> {
+  if (components === 1) return encodeGrayJpeg(samples, width, height, quality)
+  const canvas = new OffscreenCanvas(width, height)
+  context2d(canvas, false).putImageData(rawToImageData({ kind: 'raw', bytes: samples, width, height, components }), 0, 0)
+  return (await canvasJpeg(canvas, { width, height, format: 'jpeg', quality })).bytes
+}
+
+async function canvasJpeg(canvas: OffscreenCanvas, output: CodecOutput): Promise<CodecResult> {
+  const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: output.quality ?? 0.82 })
+  if (blob.type !== 'image/jpeg') throw new Error('This browser cannot write JPEG images.')
+  return { bytes: new Uint8Array(await blob.arrayBuffer()), width: output.width, height: output.height, format: output.format }
+}
+
+/** What the browser codec writes for an output already drawn by canvas. */
+async function browserOnly(canvas: OffscreenCanvas, output: CodecOutput, components: 1 | 3, quality: number): Promise<Uint8Array> {
+  if (components === 3) return (await canvasJpeg(canvas, output)).bytes
+  const rgba = context2d(canvas, true).getImageData(0, 0, output.width, output.height).data
+  const gray = new Uint8Array(output.width * output.height)
+  for (let pixel = 0, offset = 0; pixel < gray.length; pixel += 1, offset += 4) gray[pixel] = rgba[offset]
+  return encodeGrayJpeg(gray, output.width, output.height, quality)
+}
+
+async function render(surfaces: Surface[], output: CodecOutput, overrides: EncoderOverrides, full: () => ImageData): Promise<CodecResult> {
+  const viaCanvas = output.format === 'jpeg' && !overrides.writeJpeg
+  let pixels: Uint8ClampedArray
+  // The browser's own resize of this output, when another resizer made the pixels.
+  let todayCanvas: OffscreenCanvas | null = null
+  if (overrides.resize) {
+    const source = full()
+    const resized = source.width === output.width && source.height === output.height ? source : await overrides.resize(source, output.width, output.height)
+    if (viaCanvas) {
+      const canvas = new OffscreenCanvas(output.width, output.height)
+      context2d(canvas, false).putImageData(resized, 0, 0)
+      return canvasJpeg(canvas, output)
+    }
+    pixels = resized.data
+    if (resized !== source && overrides.writeJpeg && (output.format === 'jpeg' || output.format === 'jpeg-gray')) todayCanvas = drawScaled(surfaces, output.width, output.height, output.format === 'jpeg-gray')
+  } else {
+    const canvas = drawScaled(surfaces, output.width, output.height, !viaCanvas)
+    if (viaCanvas) return canvasJpeg(canvas, output)
+    pixels = context2d(canvas, true).getImageData(0, 0, output.width, output.height).data
   }
-  const pixels = context2d(canvas, true).getImageData(0, 0, output.width, output.height).data
   const count = output.width * output.height
-  const components = output.format === 'flate-rgb' ? 3 : 1
+  const components = output.format === 'flate-rgb' || output.format === 'jpeg' ? 3 : 1
   const samples = new Uint8Array(count * components)
   if (components === 3) {
     for (let pixel = 0, sample = 0, offset = 0; pixel < count; pixel += 1, sample += 3, offset += 4) {
@@ -120,23 +173,56 @@ async function render(surfaces: Surface[], output: CodecOutput): Promise<CodecRe
   } else {
     for (let pixel = 0, offset = 0; pixel < count; pixel += 1, offset += 4) samples[pixel] = pixels[offset]
   }
-  const bytes = output.format === 'jpeg-gray' ? encodeGrayJpeg(samples, output.width, output.height, output.quality ?? 0.82) : await deflate(samples)
+  const quality = output.quality ?? 0.82
+  let bytes: Uint8Array
+  if (output.format === 'jpeg' || output.format === 'jpeg-gray') {
+    bytes = overrides.writeJpeg ? await overrides.writeJpeg(samples, output.width, output.height, components, quality, todayCanvas ? await browserOnly(todayCanvas, output, components, quality) : undefined) : encodeGrayJpeg(samples, output.width, output.height, quality)
+  } else {
+    bytes = await (overrides.deflate ?? deflate)(samples)
+  }
   return { bytes, width: output.width, height: output.height, format: output.format }
 }
 
-export const browserCodec: ImageCodec = {
-  async encode(source, outputs) {
-    const bitmap = await decode(source)
-    const surfaces: Surface[] = [{ image: bitmap, width: bitmap.width, height: bitmap.height, canvas: null }]
-    try {
-      // Largest first, so each smaller output can start from a bigger one already drawn.
-      const order = outputs.map((_, index) => index).sort((a, b) => outputs[b].width * outputs[b].height - outputs[a].width * outputs[a].height)
-      const results: CodecResult[] = new Array(outputs.length)
-      for (const index of order) results[index] = await render(surfaces, outputs[index])
-      return results
-    } finally {
-      bitmap.close()
-      surfaces.length = 0
-    }
-  },
+/** The browser's decoder and resizer, with its own encoders unless `overrides` replaces them. */
+export function createBrowserCodec(overrides: EncoderOverrides = {}): ImageCodec {
+  return {
+    async encode(source, outputs) {
+      const bitmap = await decode(source)
+      const surfaces: Surface[] = [{ image: bitmap, width: bitmap.width, height: bitmap.height, canvas: null }]
+      // Pixels for an override resizer, read once per image: full size, or for a
+      // huge photo twice the largest output, halved down by canvas first so the
+      // readback and the resizer's copies stay a bounded size.
+      let fullPixels: ImageData | null = null
+      const full = () => {
+        if (!fullPixels) {
+          const largest = outputs.reduce((a, b) => (b.width * b.height > a.width * a.height ? b : a))
+          const width = Math.min(bitmap.width, largest.width * 2)
+          const height = Math.min(bitmap.height, largest.height * 2)
+          if (width === bitmap.width && height === bitmap.height) {
+            const canvas = new OffscreenCanvas(width, height)
+            const context = context2d(canvas, true)
+            context.drawImage(bitmap, 0, 0)
+            fullPixels = context.getImageData(0, 0, width, height)
+          } else {
+            // Its own surfaces, so each output's canvas resize (what its JPEG must not outweigh) starts from the original, as in the browser codec.
+            fullPixels = context2d(drawScaled([{ image: bitmap, width: bitmap.width, height: bitmap.height, canvas: null }], width, height, true), true).getImageData(0, 0, width, height)
+          }
+        }
+        return fullPixels
+      }
+      try {
+        // Largest first, so each smaller output can start from a bigger one already drawn.
+        const order = outputs.map((_, index) => index).sort((a, b) => outputs[b].width * outputs[b].height - outputs[a].width * outputs[a].height)
+        const results: CodecResult[] = new Array(outputs.length)
+        for (const index of order) results[index] = await render(surfaces, outputs[index], overrides, full)
+        return results
+      } finally {
+        bitmap.close()
+        surfaces.length = 0
+        fullPixels = null
+      }
+    },
+  }
 }
+
+export const browserCodec: ImageCodec = createBrowserCodec()

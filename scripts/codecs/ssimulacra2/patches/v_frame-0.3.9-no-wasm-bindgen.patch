@@ -1,0 +1,31 @@
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -73,8 +73,3 @@
+ version = "0.6"
+ default-features = false
+ 
+-[target.wasm32-unknown-unknown.dependencies.wasm-bindgen]
+-version = "0.2"
+-
+-[target.wasm32-unknown-unknown.dev-dependencies.wasm-bindgen-test]
+-version = "0.3"
+--- a/src/pixel.rs
++++ b/src/pixel.rs
+@@ -10,9 +10,6 @@
+ #[cfg(feature = "serialize")]
+ use serde::{Deserialize, Serialize};
+ 
+-#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+-use wasm_bindgen::prelude::*;
+-
+ use num_traits::{AsPrimitive, FromPrimitive, PrimInt, Signed};
+ 
+ use std::fmt;
+@@ -149,7 +146,6 @@
+ /// Chroma subsampling format
+ #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+ #[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
+-#[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), wasm_bindgen)]
+ #[repr(C)]
+ pub enum ChromaSampling {
+     /// Both vertically and horizontally subsampled.

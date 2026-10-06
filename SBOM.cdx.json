@@ -13,6 +13,11 @@
     { "type": "library", "name": "@neslinesli93/qpdf-wasm", "version": "0.3.0", "purl": "pkg:npm/%40neslinesli93/qpdf-wasm@0.3.0", "licenses": [{ "license": { "id": "ISC" } }] },
     { "type": "library", "name": "pdfjs-dist", "version": "6.4.299", "purl": "pkg:npm/pdfjs-dist@6.4.299", "licenses": [{ "license": { "id": "Apache-2.0" } }], "description": "Loaded only for flatten; ships its standard fonts, CMaps and OpenJPEG/JBIG2 WASM decoders as separate assets" },
     { "type": "library", "name": "react", "version": "19.3.0", "purl": "pkg:npm/react@19.3.0", "licenses": [{ "license": { "id": "MIT" } }] },
-    { "type": "library", "name": "react-dom", "version": "19.3.0", "purl": "pkg:npm/react-dom@19.3.0", "licenses": [{ "license": { "id": "MIT" } }] }
+    { "type": "library", "name": "react-dom", "version": "19.3.0", "purl": "pkg:npm/react-dom@19.3.0", "licenses": [{ "license": { "id": "MIT" } }] },
+    { "type": "library", "name": "jpegli", "version": "031a0077f5799a6041004267fc12b956c1f52a20", "purl": "pkg:github/google/jpegli@031a0077f5799a6041004267fc12b956c1f52a20", "licenses": [{ "license": { "id": "BSD-3-Clause" } }], "description": "Compiled to WebAssembly with Highway 271a9a0e (Apache-2.0 OR BSD-3-Clause) and libjpeg-turbo 8ecba364 headers (IJG, BSD-3-Clause); see scripts/codecs/jpegli" },
+    { "type": "library", "name": "ssimulacra2", "version": "0.5.1", "purl": "pkg:cargo/ssimulacra2@0.5.1", "licenses": [{ "license": { "id": "BSD-2-Clause" } }], "description": "Patched and compiled to WebAssembly with v_frame 0.3.9 (BSD-2-Clause) and the crates in scripts/codecs/ssimulacra2/crate/Cargo.lock" },
+    { "type": "library", "name": "libdeflate", "version": "1.24", "purl": "pkg:github/ebiggers/libdeflate@v1.24", "licenses": [{ "license": { "id": "MIT" } }], "description": "Compiled to WebAssembly; see scripts/codecs/libdeflate" },
+    { "type": "library", "name": "@jsquash/resize", "version": "2.1.1", "purl": "pkg:npm/%40jsquash/resize@2.1.1", "licenses": [{ "license": { "id": "Apache-2.0" } }], "description": "Wraps the resize crate (MIT) built to WebAssembly; Lanczos3 resizing" },
+    { "type": "library", "name": "emscripten", "version": "6.0.11", "purl": "pkg:github/emscripten-core/emscripten@6.0.11", "licenses": [{ "expression": "MIT OR NCSA" }], "description": "Runtime, musl libc (MIT) and LLVM libc++/compiler-rt (Apache-2.0 WITH LLVM-exception) linked into jpegli and libdeflate" }
   ]
 }
