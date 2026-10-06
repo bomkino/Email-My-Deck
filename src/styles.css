@@ -52,6 +52,7 @@ button { color: inherit; }
 .footer { width: min(1120px, calc(100% - 64px)); margin: auto; padding: 18px 0 22px; border-top: 1px solid var(--rule); display: flex; justify-content: space-between; gap: 16px; color: var(--muted); font-size: .86rem; }
 .footer-detail { display: inline-flex; align-items: center; gap: 5px; color: var(--faint); }
 .footer-detail svg { color: var(--green); }
+.footer-link { color: inherit; text-underline-offset: 3px; }
 .eyebrow { margin: 0 0 14px; color: var(--blue-dark); font-weight: 700; text-transform: uppercase; letter-spacing: .09em; font-size: .72rem; }
 .status-panel, .result-panel, .split-panel { width: min(900px, 100%); margin: 0 auto; }
 .status-panel { padding-top: 20px; }
