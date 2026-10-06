@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CompressionOutcome } from './lib/compression'
+import { runGhostscript, type CompressionOutcome } from './lib/compression'
 import { emailVersionName } from './lib/filename'
 import { formatBytes, formatDuration } from './lib/format'
-import { getTargetProfile, TARGET_PROFILES, type TargetProfileId } from './lib/profiles'
+import { estimatedMessageBytes, getTargetProfile, TARGET_PROFILES, type TargetProfileId } from './lib/profiles'
+import { inspectPdf } from './lib/pdf'
 
 type Stage = 'idle' | 'reading' | 'compressing' | 'splitting' | 'ready' | 'split' | 'error'
 type SplitPart = { bytes: Uint8Array; name: string; startPage: number; endPage: number }
@@ -42,6 +43,8 @@ export default function App() {
   const [copied, setCopied] = useState(false)
 
   const profile = useMemo(() => getTargetProfile(profileId, customMessageMiB), [profileId, customMessageMiB])
+  const profileRef = useRef(profile)
+  profileRef.current = profile
   const isBusy = stage === 'reading' || stage === 'compressing' || stage === 'splitting'
 
   useEffect(() => {
@@ -60,9 +63,33 @@ export default function App() {
           setStage('ready')
           setProgress({ label: 'Verified locally', fraction: 1 })
         } else {
-          setStage('splitting')
-          setProgress({ label: 'Preparing measured split parts', fraction: 0.2 })
-          worker.postMessage({ type: 'split', bytes: next.candidate.bytes, maxPartBytes: next.targetBytes }, [next.candidate.bytes.buffer])
+          setStage('compressing')
+          setProgress({ label: 'Trying stronger image downsampling', fraction: 0.58 })
+          runGhostscript(next.candidate.bytes, (progress) => setProgress(progress)).then(async (strongBytes) => {
+            const strongInspection = await inspectPdf(strongBytes)
+            const strongIsSafe = strongBytes.byteLength < next.candidate.bytes.byteLength && strongInspection.pages === next.inspection.pages
+            const chosenBytes = strongIsSafe ? strongBytes : next.candidate.bytes
+            if (strongIsSafe && strongBytes.byteLength <= next.targetBytes) {
+              const strongOutcome: CompressionOutcome = {
+                ...next,
+                candidate: { bytes: strongBytes, engine: 'ghostscript', quality: 'strong', notes: ['Images downsampled for email. Text and page geometry were checked before offering the result.'] },
+                estimatedMessageBytes: estimatedMessageBytes(strongBytes.byteLength, profileRef.current),
+                verified: true,
+              }
+              setOutcome(strongOutcome)
+              setStage('ready')
+              setProgress({ label: 'Verified locally', fraction: 1 })
+              return
+            }
+            setStage('splitting')
+            setProgress({ label: 'Preparing measured split parts', fraction: 0.86 })
+            worker.postMessage({ type: 'split', bytes: chosenBytes, maxPartBytes: next.targetBytes }, [chosenBytes.buffer])
+          }).catch((error) => {
+            console.warn('Ghostscript candidate unavailable', error)
+            setStage('splitting')
+            setProgress({ label: 'Preparing measured split parts', fraction: 0.86 })
+            worker.postMessage({ type: 'split', bytes: next.candidate.bytes, maxPartBytes: next.targetBytes }, [next.candidate.bytes.buffer])
+          })
         }
         return
       }

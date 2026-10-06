@@ -55,7 +55,7 @@ async function runQpdf(input: Uint8Array, optimizeImages: boolean, onProgress?: 
   return new Uint8Array(output)
 }
 
-async function runGhostscript(input: Uint8Array, onProgress?: (progress: CompressionProgress) => void): Promise<Uint8Array> {
+export async function runGhostscript(input: Uint8Array, onProgress?: (progress: CompressionProgress) => void): Promise<Uint8Array> {
   onProgress?.({ label: 'Opening strong compression engine', fraction: 0.58 })
   const { load } = await import('@wasm-zoo/ghostscript')
   const gs = await load()
@@ -73,6 +73,7 @@ async function runGhostscript(input: Uint8Array, onProgress?: (progress: Compres
       files: [{ name: '/email-my-deck-input.pdf', data: input }],
       dirs: ['/out'],
       outputs: ['/email-my-deck-strong.pdf'],
+      timeoutMs: 90000,
     })
     onProgress?.({ label: 'Checking strong candidate', fraction: 0.82 })
     const output = result.files.find((file: { name: string }) => file.name === '/email-my-deck-strong.pdf')
@@ -131,14 +132,6 @@ export async function compressPdf(
   }
   if (signal?.aborted) throw new DOMException('Compression cancelled.', 'AbortError')
   const best = candidates.reduce((winner, candidate) => candidateRank(candidate, targetBytes) > candidateRank(winner, targetBytes) ? candidate : winner)
-  if (best.bytes.byteLength > targetBytes) {
-    try {
-      const strong = await runGhostscript(original, onProgress)
-      if (strong.byteLength < original.byteLength) candidates.push({ bytes: strong, engine: 'ghostscript', quality: 'strong', notes: ['Images downsampled for email. Text and page geometry retained where supported.'] })
-    } catch (error) {
-      console.warn('Ghostscript candidate unavailable', error)
-    }
-  }
   const winner = candidates.reduce((current, candidate) => candidateRank(candidate, targetBytes) > candidateRank(current, targetBytes) ? candidate : current)
   onProgress?.({ label: winner.bytes.byteLength <= targetBytes ? 'Ready to verify' : 'Best single-file attempt measured', fraction: 0.94 })
   return {
