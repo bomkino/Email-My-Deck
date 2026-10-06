@@ -18,6 +18,7 @@ These are the decisions behind the current implementation. They are here to prev
 | Output names | `-email-version` and numbered `-part-XX-of-YY` suffixes | Users should know what a file is for before attaching it. |
 | Hosting | Static Cloudflare Pages build | No upload API, storage, database, or paid runtime is needed. |
 | License | AGPL-3.0-or-later | Improvements to a hosted version remain available to the community. |
+| Home and analytics (2026-10-06) | A page on pitch.dog at `/email-my-deck/`, using the site's Google Analytics tag with session replay off | The team wanted visit counts like every other pitch.dog page. The tool sends no file, file name or contents; copy says we count visits and never claims "no analytics". |
 
 ## Approaches deliberately rejected
 

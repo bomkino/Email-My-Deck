@@ -2,7 +2,7 @@
 
 Email My Deck answers one narrow question: **“How do I get this deck into an email without making it unreadable?”**
 
-Drop in a presentation PDF, choose the mailbox limit, and get either a verified `-email-version.pdf` or measured sequential parts with a ready-to-copy email plan. The PDF stays in the browser. There is no account, upload endpoint, analytics, email integration, or third-party font dependency.
+Drop in a presentation PDF, choose the mailbox limit, and get either a verified `-email-version.pdf` or measured sequential parts with a ready-to-copy email plan. The PDF stays in the browser. There is no account, upload endpoint, email integration, or third-party font dependency. On pitch.dog the page counts visits with Google Analytics, like the rest of the site; the PDF, its name and its contents never leave the browser.
 
 This repository is the complete shareable implementation and handoff for the current release. Start with [HANDOFF.md](HANDOFF.md) for the product story, decisions, test evidence, and deployment gates. [DECISIONS.md](DECISIONS.md) records the important tradeoffs so a future contributor does not accidentally undo the privacy or quality guarantees.
 
@@ -10,12 +10,12 @@ This repository is the complete shareable implementation and handoff for the cur
 
 1. Reads and inspects the PDF in a dedicated browser worker.
 2. Tries the least destructive local optimization first.
-3. Uses stronger image downsampling only when it is needed.
+3. Re-saves or resizes photos only as far as it has to, along a ladder measured in pixels across the slide.
 4. Verifies that the page count and page geometry survived.
 5. Offers a filename ending in `-email-version.pdf` when one file fits.
 6. If the quality floor cannot be met, creates measured `-email-version-part-01-of-03.pdf` files and separates each email subject from its attachment name.
 
-The default **Common 25 MB mail systems** profile uses a conservative raw-PDF budget so base64/MIME overhead and message text have room. The strict profile is safer for older systems. The Gmail profile is deliberately labelled conditional because a large Gmail attachment can still be rejected by a recipient gateway.
+The default **Most mailboxes** setting uses a conservative raw-PDF budget (about 17.8 MB) so base64/MIME overhead and message text have room. **Strict or work mailboxes** is safer for 20 MB limits. **Gmail to Gmail only** is deliberately conditional, because a large Gmail attachment can still be rejected by a recipient's mail server.
 
 ## Run locally
 
@@ -25,27 +25,33 @@ npm run corpus   # optional: create synthetic test decks in corpus/
 npm run dev
 ```
 
-The production checks are:
-
-```bash
-npm test
-npm run build
-npm run smoke   # run while Vite is serving on port 5173
-```
-
-For a clean handoff, use this sequence:
+The checks, as CI runs them on every pull request:
 
 ```bash
 npm ci
 npm run corpus
 npm test
 npm run build
-npm run dev -- --host 127.0.0.1
-# in another terminal:
+node scripts/engine-check.mjs
+node scripts/serve-dist.mjs dist 5173 &   # serves dist/ with public/_headers
 npm run smoke
 ```
 
-`npm run smoke` uses the synthetic corpus and a Playwright browser. It fails if a request leaves the local origin.
+`npm run smoke` uses the synthetic corpus and a Playwright browser. It fails if a request goes anywhere except the page's own origin and the Google Analytics hosts, or if any request mentions the test deck's file name. Set `SMOKE_URL` to test the pitch.dog build (for example `http://127.0.0.1:8090/email-my-deck/` with `apps/main-site` served locally) and `CHROMIUM_PATH` to use another browser.
+
+## On pitch.dog
+
+The live home for the tool is `pitch.dog/email-my-deck/`. `index.html` is the whole pitch.dog page; the React tool mounts inside it at `#emd-root`. The page borrows pitch.dog's type system, nav, analytics loader and icons by absolute path, so those only appear when it is served from the main site; under `npm run dev` the tool works but the page is unstyled around it.
+
+```bash
+npm run build:pitchdog   # builds dist-pitchdog/ with base /email-my-deck/
+```
+
+To ship a change to pitch.dog:
+
+1. Merge it here, then run `npm run build:pitchdog` on a clean checkout. `BUILD.json` records the commit, and `licenses/` carries the AGPL text, third-party notices and provenance.
+2. In `bomkino/pitchdog-cloudflare-sites`, replace `apps/main-site/email-my-deck/` with `dist-pitchdog/`, run `node scripts/add-free-stuff-nav.mjs`, and merge.
+3. Run that repository's "Deploy Email My Deck" workflow. It serves the page from its own Worker route, so the rest of pitch.dog is untouched.
 
 ## Architecture
 
@@ -59,17 +65,11 @@ npm run smoke
 - The worker reports progress as `{ stage, fraction, label, page?, pages? }`; `fraction` never goes backwards. Errors carry a `code` (`not-pdf`, `damaged`, `password`, `restricted`, `protected` with a `reason`, `too-big`, `page-too-large`, `engine`).
 - `node scripts/engine-check.mjs` (after `npm run build` and `npm run corpus`) runs the built engine in Chromium on the synthetic corpus, served with the site's own `_headers` by `scripts/serve-dist.mjs`, and checks each deck's result, the progress events and that nothing leaves the origin. CI runs it and `npm run smoke` against the built site on every pull request.
 
-The compression engine never receives user-controlled command-line arguments. A 120-second browser-job watchdog prevents a pathological file from leaving the interface spinning forever. Large engine assets are bundled and self-hostable. The Ghostscript WebAssembly distribution is AGPL-3.0-or-later; see [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) and [PROVENANCE.md](PROVENANCE.md) before redistribution.
+The compression engine never receives user-controlled command-line arguments. A browser-job watchdog stops any job that goes 60 seconds without a progress event, so a pathological file never leaves the interface spinning forever while a big deck that keeps moving is never cut off. Large engine assets are bundled and self-hostable; see [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) and [PROVENANCE.md](PROVENANCE.md) before redistribution.
 
-## Cloudflare Pages
+## Standalone deploy (optional)
 
-The app is a static Vite build. Deploy `dist/` from `main` with:
-
-- build command: `npm run build`
-- output directory: `dist`
-- Node version: 20 or newer
-
-The checked-in `public/_headers` file supplies a restrictive CSP and security headers. Use a dedicated Pages project or a same-origin route in pitch.dog; do not add a Worker upload route. See [CLOUDFLARE.md](CLOUDFLARE.md) for the integration constraint around root paths and iframe embedding.
+The plain build in `dist/` can also run on its own Cloudflare Pages project. `.github/workflows/deploy-pages.yml` does that, by hand only, once its secrets are set. The checked-in `public/_headers` supplies a restrictive CSP and security headers. Never add an upload route. See [CLOUDFLARE.md](CLOUDFLARE.md).
 
 ## Privacy boundary
 

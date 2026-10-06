@@ -1,21 +1,23 @@
-# Cloudflare Pages handoff
+# Cloudflare
 
-Create a Pages project from `bomkino/Email-My-Deck`:
+Email My Deck is static. It never needs Pages Functions, R2, D1, KV or an upload route for PDF bytes.
 
-```text
-Build command: npm run build
-Output directory: dist
-Node: 20+
-```
+## pitch.dog (the live home)
 
-The checked-in workflow deploys `main` after `npm test` and `npm run build`. Add these repository settings before enabling it:
+`pitch.dog/email-my-deck/` is built here with `npm run build:pitchdog` and shipped from `bomkino/pitchdog-cloudflare-sites`:
+
+- `apps/main-site/email-my-deck/` holds the build, and `BUILD.json` names the commit.
+- `apps/main-site/_headers` carries the route's CSP. It is this repository's CSP plus the Google Analytics and Cloudflare Web Analytics hosts.
+- `workers/email-my-deck/` serves the page, and the nav dropdown files, from a static-assets Worker on the `pitch.dog/email-my-deck*` route. The rest of pitch.dog is untouched. Its "Deploy Email My Deck" workflow needs the `CLOUDFLARE_API_TOKEN` secret in that repository.
+
+The README section "On pitch.dog" has the step-by-step.
+
+## Standalone Pages project (optional)
+
+`.github/workflows/deploy-pages.yml` runs by hand only. It runs the same checks as CI, then deploys `dist/` to a Pages project. Before running it, add:
 
 - secret `CLOUDFLARE_API_TOKEN` with Pages edit permission;
 - secret `CLOUDFLARE_ACCOUNT_ID` set to the pitch.dog Cloudflare account;
 - optional repository variable `CF_PAGES_PROJECT` (defaults to `email-my-deck`).
 
-The app is static. It should not use Pages Functions, Workers, R2, D1, KV, or an upload route for PDF bytes. Keep `public/_headers` in the output so the same-origin CSP and privacy boundary ship with the site.
-
-For the pitch.dog website, the safest first integration is a route or link owned by the main site that points at this Pages project. A later merge can copy the built surface into `pitchdog-cloudflare-sites/apps/main-site` only after the main-site build has an explicit route and the deployment checks have been reviewed. The standalone repository remains the canonical source for the tool.
-
-The build assumes it is served at the origin root (`/`) and deliberately sends `frame-ancestors 'none'`. Use a same-origin route or a link from pitch.dog; do not iframe this standalone deployment without an explicit base-path and CSP review.
+The standalone build assumes it is served at the origin root and sends `frame-ancestors 'none'`. Link to it; never iframe it.
