@@ -4,6 +4,7 @@ import { deflateSync } from 'node:zlib'
 import jpeg from 'jpeg-js'
 import { PDFDocument, PDFName, PDFString, type PDFRef } from 'pdf-lib'
 import type { CodecOutput, CodecResult, CodecSource, ImageCodec } from '../../src/lib/engine/codec'
+import { encodeGrayJpeg } from '../../src/lib/engine/grayjpeg'
 import { QpdfSession, type QpdfLoader, type QpdfModuleFactory } from '../../src/lib/engine/qpdf'
 
 const require = createRequire(import.meta.url)
@@ -72,7 +73,8 @@ function encodeOutput(image: Rgba, output: CodecOutput): CodecResult {
   for (let pixel = 0; pixel < output.width * output.height; pixel += 1) {
     for (let channel = 0; channel < components; channel += 1) samples[pixel * components + channel] = scaled.data[pixel * 4 + channel]
   }
-  return { bytes: new Uint8Array(deflateSync(samples)), width: output.width, height: output.height, format: output.format }
+  const bytes = output.format === 'jpeg-gray' ? encodeGrayJpeg(samples, output.width, output.height, output.quality ?? 0.82) : new Uint8Array(deflateSync(samples))
+  return { bytes, width: output.width, height: output.height, format: output.format }
 }
 
 /** Stand-in for the browser's canvas codec, using jpeg-js and zlib. */
