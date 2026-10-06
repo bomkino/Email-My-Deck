@@ -7,8 +7,10 @@ const target = new URL(process.env.SMOKE_URL || 'http://127.0.0.1:5173/')
 const deck = 'photo-deck'
 
 // The pitch.dog page counts visits with Google Analytics, like the rest of
-// pitch.dog. Those hosts are the only ones allowed besides the page's own.
-const analyticsHosts = [/^www\.googletagmanager\.com$/, /^([a-z0-9-]+\.)*google-analytics\.com$/, /^analytics\.google\.com$/]
+// pitch.dog, and on pitch.dog itself Cloudflare adds its cookieless Web
+// Analytics beacon to every page. Those hosts are the only ones allowed besides
+// the page's own, and the file name must reach none of them.
+const analyticsHosts = [/^www\.googletagmanager\.com$/, /^([a-z0-9-]+\.)*google-analytics\.com$/, /^analytics\.google\.com$/, /^(static\.)?cloudflareinsights\.com$/]
 
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] })
 const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } })

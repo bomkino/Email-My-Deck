@@ -37,7 +37,7 @@ node scripts/serve-dist.mjs dist 5173 &   # serves dist/ with public/_headers
 npm run smoke
 ```
 
-`npm run smoke` uses the synthetic corpus and a Playwright browser. It fails if a request goes anywhere except the page's own origin and the Google Analytics hosts, or if any request mentions the test deck's file name. Set `SMOKE_URL` to test the pitch.dog build (for example `http://127.0.0.1:8090/email-my-deck/` with `apps/main-site` served locally) and `CHROMIUM_PATH` to use another browser.
+`npm run smoke` uses the synthetic corpus and a Playwright browser. It fails if a request goes anywhere except the page's own origin, the Google Analytics hosts and Cloudflare's Web Analytics beacon (added on pitch.dog itself), or if any request mentions the test deck's file name. Set `SMOKE_URL` to test the pitch.dog build (for example `http://127.0.0.1:8090/email-my-deck/` with `apps/main-site` served locally) and `CHROMIUM_PATH` to use another browser.
 
 ## On pitch.dog
 
