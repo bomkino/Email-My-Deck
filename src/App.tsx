@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CompressionOutcome } from './lib/compression'
 import { emailVersionName } from './lib/filename'
-import { getTargetProfile, TARGET_PROFILES, type TargetProfileId } from './lib/profiles'
+import { estimatedMessageBytes, getTargetProfile, rawBudgetBytes, TARGET_PROFILES, type TargetProfile, type TargetProfileId } from './lib/profiles'
 import {
-  busyCopy, errorCopy, errorKindFor, idleCopy, mailboxCopy, mailboxWhy, pageTooLargeTitle, protectedCopy, readyCopy, splitCopy,
-  stageCopy, stageFor, unsupportedCopy, waitFor, whatWeDid, type ErrorKind,
+  busyCopy, cantFitCopy, errorCopy, errorKindFor, idleCopy, mailboxCopy, mailboxName, mailboxWhy, pageTooLargeTitle, protectedCopy, readyCopy, splitCopy,
+  stageCopy, stageFor, unsupportedCopy, waitFor, weighInLine, whatWeDid, type ErrorKind, type Weights,
 } from './ui/copy'
 import { deckName, formatElapsed, formatSize, percentLighter } from './ui/format'
 import { DeckStack, Icon, Meter, Stamp, TipCard, useElapsed, useSmoothProgress, useStatusLine } from './ui/pieces'
@@ -20,6 +20,27 @@ const MAX_BROWSER_BYTES = 200 * 1024 * 1024
 const MAX_STALL_MS = 60_000
 
 const positive = (value: unknown) => (Number(value) > 0 ? Number(value) : undefined)
+
+/** What a deck of this size weighs against the mailbox picked. */
+function weightsFor(deck: number, profileId: TargetProfileId, profile: TargetProfile): Weights {
+  return {
+    deck,
+    email: estimatedMessageBytes(deck, profile),
+    limit: profile.maxMessageBytes,
+    budget: rawBudgetBytes(profile),
+    mailbox: mailboxName(profileId, profile.maxMessageBytes),
+    conditional: Boolean(profile.conditional),
+  }
+}
+
+/** The lightest single file the engine reached, measured or predicted. */
+function lightestOf(outcome: CompressionOutcome): { bytes: number; estimated: boolean } {
+  let lightest = { bytes: outcome.receipt?.outputBytes ?? outcome.candidate.bytes.byteLength, estimated: false }
+  for (const attempt of outcome.receipt?.attempts ?? []) {
+    if (attempt.bytes > 0 && attempt.bytes < lightest.bytes) lightest = { bytes: attempt.bytes, estimated: Boolean(attempt.predicted) }
+  }
+  return lightest
+}
 
 function browserCanRunEngine(): boolean {
   return typeof WebAssembly === 'object' && typeof Worker === 'function' && typeof Blob !== 'undefined' && typeof Blob.prototype.arrayBuffer === 'function' && typeof URL.createObjectURL === 'function'
@@ -286,13 +307,17 @@ export default function App() {
       <input ref={inputRef} className="sr-only" type="file" accept="application/pdf,.pdf" tabIndex={-1} aria-hidden="true" onChange={(event) => chooseFile(event.target.files?.[0])} />
       <MailboxPicker profileId={profileId} customMessageMB={customMessageMB} onChange={setProfileId} onCustomChange={setCustomMessageMB} />
     </>}
-    {isBusy && file && <Busy file={file} stage={stage} progress={progress} headingRef={headingRef} onCancel={reset} />}
+    {isBusy && file && <Busy file={file} stage={stage} progress={progress} weights={weightsFor(file.size, profileId, profile)} headingRef={headingRef} onCancel={reset} />}
     {stage === 'ready' && file && outcome && <Ready
-      file={file} outcome={outcome} profileId={profileId} limitBytes={profile.maxMessageBytes} conditional={Boolean(profile.conditional)} headingRef={headingRef}
+      file={file} outcome={outcome} profileId={profileId} weights={weightsFor(file.size, profileId, profile)} headingRef={headingRef}
       onStricter={() => { setProfileId('strict-20'); chooseFile(file, 'strict-20', customMessageMB) }}
       onReset={reset}
     />}
-    {stage === 'split' && file && <Split file={file} parts={parts} reason={outcome?.splitReason} headingRef={headingRef} onReset={reset} />}
+    {stage === 'split' && file && <CantFit
+      file={file} parts={parts} outcome={outcome} profileId={profileId} weights={weightsFor(file.size, profileId, profile)} headingRef={headingRef}
+      onGmail={() => { setProfileId('gmail-advanced'); chooseFile(file, 'gmail-advanced', customMessageMB) }}
+      onReset={reset}
+    />}
     {draggingPage && (stage === 'idle' || stage === 'error' || stage === 'ready' || stage === 'split') && <div className="drop-overlay" aria-hidden="true">
       <div className="drop-overlay-card"><DeckStack label="your-deck.pdf" state="hover" /><strong data-pd-type="heading.subsection">{idleCopy.dropAnywhere}</strong><span data-pd-type="body.default">{idleCopy.dropAnywhereNote}</span></div>
     </div>}
@@ -347,7 +372,7 @@ function MailboxPicker({ profileId, customMessageMB, onChange, onCustomChange }:
   </div>
 }
 
-function Busy({ file, stage, progress, headingRef, onCancel }: { file: File; stage: Stage; progress: Progress; headingRef: HeadingRef; onCancel: () => void }) {
+function Busy({ file, stage, progress, weights, headingRef, onCancel }: { file: File; stage: Stage; progress: Progress; weights: Weights; headingRef: HeadingRef; onCancel: () => void }) {
   const shown = useSmoothProgress(progress.fraction, true)
   const elapsed = useElapsed(true)
   const key = stage === 'splitting' ? 'split' : stageFor(progress.label, progress.stage)
@@ -363,6 +388,7 @@ function Busy({ file, stage, progress, headingRef, onCancel }: { file: File; sta
     </div>
     <p className="eyebrow" data-pd-type="metadata"><span className="pulse-dot" aria-hidden="true" />{busyCopy.eyebrow}</p>
     <h2 id="emd-busy-title" ref={headingRef} tabIndex={-1} data-pd-type="heading.subsection">{stage === 'splitting' ? busyCopy.splittingTitle : busyCopy.workingTitle}</h2>
+    <p className="busy-weigh" data-pd-type="body.default">{weighInLine(weights)}</p>
     <div className="progress" role="progressbar" aria-label="Progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} aria-valuetext={`${percent}%. ${label}`}>
       <span className="progress-fill" style={{ '--progress': shown } as React.CSSProperties} />
     </div>
@@ -373,7 +399,7 @@ function Busy({ file, stage, progress, headingRef, onCancel }: { file: File; sta
   </section>
 }
 
-function Ready({ file, outcome, profileId, limitBytes, conditional, headingRef, onStricter, onReset }: { file: File; outcome: CompressionOutcome; profileId: TargetProfileId; limitBytes: number; conditional: boolean; headingRef: HeadingRef; onStricter: () => void; onReset: () => void }) {
+function Ready({ file, outcome, profileId, weights, headingRef, onStricter, onReset }: { file: File; outcome: CompressionOutcome; profileId: TargetProfileId; weights: Weights; headingRef: HeadingRef; onStricter: () => void; onReset: () => void }) {
   const [downloaded, setDownloaded] = useState(false)
   const untouched = outcome.candidate.engine === 'original'
   const outputBytes = outcome.candidate.bytes.byteLength
@@ -389,8 +415,8 @@ function Ready({ file, outcome, profileId, limitBytes, conditional, headingRef, 
     <p className="eyebrow" data-pd-type="metadata">{readyCopy.eyebrow}</p>
     <h2 id="emd-ready-title" ref={headingRef} tabIndex={-1} data-pd-type="heading.subsection">{untouched ? readyCopy.fitsTitle : readyCopy.title}</h2>
     {untouched
-      ? <p className="ready-lede" data-pd-type="body.default">{readyCopy.fitsBody}</p>
-      : <div className="receipt">
+      ? <p className="ready-lede" data-pd-type="body.default">{readyCopy.fitsBody} {readyCopy.fitsWeight(weights)}</p>
+      : <><p className="ready-lede" data-pd-type="body.default">{readyCopy.madeRoom(weights)}</p><div className="receipt">
         <div className="receipt-sizes">
           <span className="receipt-before" data-pd-type="data"><s>{formatSize(file.size)}</s></span>
           <Icon name="arrow" size={22} />
@@ -401,9 +427,9 @@ function Ready({ file, outcome, profileId, limitBytes, conditional, headingRef, 
           {did.map((line) => <li key={line}><Icon name="check" size={16} />{line}</li>)}
           <li><Icon name="check" size={16} />{readyCopy.sameSlides(outcome.inspection.pages)}</li>
         </ul>
-      </div>}
-    <Meter used={outcome.estimatedMessageBytes} limit={limitBytes} label="Room in the email" />
-    {conditional && <p className="note note--warn" data-pd-type="body.small">{readyCopy.conditional}</p>}
+      </div></>}
+    <Meter used={outcome.estimatedMessageBytes} limit={weights.limit} label="Room in the email" />
+    {weights.conditional && <p className="note note--warn" data-pd-type="body.small">{readyCopy.conditional}</p>}
     <div className="actions">
       {untouched
         ? <button className="button" onClick={save} type="button"><Icon name="download" size={18} />{downloaded ? readyCopy.downloadAgain : readyCopy.downloadOriginal}</button>
@@ -416,29 +442,50 @@ function Ready({ file, outcome, profileId, limitBytes, conditional, headingRef, 
   </section>
 }
 
-function Split({ file, parts, reason, headingRef, onReset }: { file: File; parts: SplitPart[]; reason?: string; headingRef: HeadingRef; onReset: () => void }) {
+function CantFit({ file, parts, outcome, profileId, weights, headingRef, onGmail, onReset }: { file: File; parts: SplitPart[]; outcome: CompressionOutcome | null; profileId: TargetProfileId; weights: Weights; headingRef: HeadingRef; onGmail: () => void; onReset: () => void }) {
   const [copied, setCopied] = useState<'idle' | 'done' | 'failed'>('idle')
   const name = deckName(file.name)
+  const reason = outcome?.splitReason
+  const lightest = outcome ? lightestOf(outcome) : { bytes: file.size, estimated: false }
+  const lightestText = `${lightest.estimated ? 'about ' : ''}${formatSize(lightest.bytes)}`
+  // Worth a second run only if the lightest version would clear Gmail's bigger allowance.
+  const gmailBudget = TARGET_PROFILES['gmail-advanced'].recommendedRawBytes
+  const tryGmail = profileId !== 'gmail-advanced' && reason !== 'browser-cannot-resize' && weights.budget < gmailBudget && lightest.bytes <= gmailBudget
   const plan = parts.map((part, index) => `Email ${index + 1} of ${parts.length}\nSubject: ${splitCopy.subject(name, index + 1, parts.length)}\nAttach: ${part.name}\n\n${splitCopy.emailBody(name, index + 1, parts.length, part.startPage, part.endPage)}`).join('\n—\n\n')
   const downloadAll = () => parts.forEach((part, index) => window.setTimeout(() => download(part.bytes, part.name), index * 450))
+  // The page's send-a-link guide, when the page around the tool has one.
+  const hasGuide = Boolean(document.getElementById('send-a-link'))
   return <section className="panel panel--split" aria-labelledby="emd-split-title">
-    <p className="eyebrow" data-pd-type="metadata">{splitCopy.eyebrow}</p>
-    <h2 id="emd-split-title" ref={headingRef} tabIndex={-1} data-pd-type="heading.subsection">{splitCopy.title(parts.length)}</h2>
-    <p className="ready-lede" data-pd-type="body.default">{splitCopy.body(parts.length, reason)}</p>
-    <ol className="parts">
-      {parts.map((part, index) => <li className="part" key={part.name}>
-        <span className="part-number" data-pd-type="data">{String(index + 1).padStart(2, '0')}</span>
-        <span className="part-info"><strong data-pd-type="label">{part.name}</strong><span data-pd-type="data">{formatSize(part.bytes.byteLength)} · {part.startPage === part.endPage ? `page ${part.startPage}` : `pages ${part.startPage}–${part.endPage}`}</span></span>
-        <button className="button button--small" onClick={() => download(part.bytes, part.name)} type="button" aria-label={`Download part ${index + 1}`}><Icon name="download" size={16} />{splitCopy.download}</button>
-      </li>)}
-    </ol>
-    <div className="actions"><button className="button button--solid" type="button" onClick={downloadAll}><Icon name="download" size={18} />{splitCopy.downloadAll(parts.length)}</button></div>
-    <div className="plan">
-      <div className="plan-head"><strong data-pd-type="title.functional">{splitCopy.planTitle}</strong>
-        <button className="button button--small" type="button" onClick={async () => { const ok = await copyText(plan); setCopied(ok ? 'done' : 'failed'); if (ok) window.setTimeout(() => setCopied('idle'), 2200) }}><Icon name={copied === 'done' ? 'check' : 'copy'} size={16} />{copied === 'done' ? splitCopy.copied : splitCopy.copy}</button>
+    <p className="eyebrow" data-pd-type="metadata">{cantFitCopy.eyebrow}</p>
+    <h2 id="emd-split-title" ref={headingRef} tabIndex={-1} data-pd-type="heading.subsection">{cantFitCopy.title}</h2>
+    <p className="ready-lede" data-pd-type="body.default">{cantFitCopy.reason(reason, lightestText, weights)}</p>
+    <p data-pd-type="body.default">{cantFitCopy.ways}</p>
+    {tryGmail && <p className="ready-alt" data-pd-type="body.small">{cantFitCopy.gmailHint(lightestText)} <button className="text-button" type="button" onClick={onGmail}>{cantFitCopy.gmailAction}</button></p>}
+
+    <div className="way way--pick">
+      <h3 className="way-title" data-pd-type="title.card">{cantFitCopy.linkTitle}<em className="badge">{cantFitCopy.linkBadge}</em></h3>
+      <p data-pd-type="body.default">{cantFitCopy.linkBody}</p>
+      {hasGuide && <a className="way-more" href="#send-a-link" data-pd-type="body.small">{cantFitCopy.linkMore}<Icon name="arrow" size={16} /></a>}
+    </div>
+
+    <div className="way">
+      <h3 className="way-title" data-pd-type="title.card">{cantFitCopy.partsTitle(parts.length)}</h3>
+      <p data-pd-type="body.default">{cantFitCopy.partsBody(parts.length, weights.mailbox)}</p>
+      <ol className="parts">
+        {parts.map((part, index) => <li className="part" key={part.name}>
+          <span className="part-number" data-pd-type="data">{String(index + 1).padStart(2, '0')}</span>
+          <span className="part-info"><strong data-pd-type="label">{part.name}</strong><span data-pd-type="data">{formatSize(part.bytes.byteLength)} · {part.startPage === part.endPage ? `page ${part.startPage}` : `pages ${part.startPage}–${part.endPage}`}</span></span>
+          <button className="button button--small" onClick={() => download(part.bytes, part.name)} type="button" aria-label={`Download part ${index + 1}`}><Icon name="download" size={16} />{splitCopy.download}</button>
+        </li>)}
+      </ol>
+      <div className="actions"><button className="button" type="button" onClick={downloadAll}><Icon name="download" size={18} />{splitCopy.downloadAll(parts.length)}</button></div>
+      <div className="plan">
+        <div className="plan-head"><strong data-pd-type="title.functional">{splitCopy.planTitle}</strong>
+          <button className="button button--small" type="button" onClick={async () => { const ok = await copyText(plan); setCopied(ok ? 'done' : 'failed'); if (ok) window.setTimeout(() => setCopied('idle'), 2200) }}><Icon name={copied === 'done' ? 'check' : 'copy'} size={16} />{copied === 'done' ? splitCopy.copied : splitCopy.copy}</button>
+        </div>
+        <p data-pd-type="body.small">{copied === 'failed' ? splitCopy.copyFailed : splitCopy.planIntro}</p>
+        <pre className="plan-text" tabIndex={0} data-pd-type="data">{plan}</pre>
       </div>
-      <p data-pd-type="body.small">{copied === 'failed' ? splitCopy.copyFailed : splitCopy.planIntro}</p>
-      <pre className="plan-text" tabIndex={0} data-pd-type="data">{plan}</pre>
     </div>
     <button className="text-button start-over" onClick={onReset} type="button">{readyCopy.startOver}</button>
   </section>

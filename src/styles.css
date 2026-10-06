@@ -268,6 +268,16 @@ body.mobile-menu-open { overflow: hidden; }
 .part-info span { color: var(--muted); }
 /* Truncated names need room for descenders, so they skip the type system's text-box trim. */
 .busy-file-name, .file-name, .part-info strong { line-height: 1.4; text-box-trim: none; }
+.busy-weigh { color: var(--muted); }
+
+/* The two ways out when a deck can't fit: a link first, then parts. */
+.way { padding: 18px; display: grid; gap: 12px; border: 1px solid var(--rule); background: var(--panel); animation: rise-in 480ms var(--ease) both; }
+.way--pick { border-color: var(--mint-ink); box-shadow: inset 3px 0 0 var(--mint-ink); }
+.way + .way { animation-delay: 90ms; }
+.way-title { margin: 0; }
+.way > p { color: var(--muted); }
+.way-more { justify-self: start; display: inline-flex; align-items: center; gap: 6px; color: var(--blue); }
+.way .parts { margin: 0; }
 .plan { padding: 16px; display: grid; gap: 10px; border: 1px solid var(--rule); background: var(--paper); }
 .plan-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .plan p { color: var(--muted); }
