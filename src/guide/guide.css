@@ -1,9 +1,23 @@
 /* ---------- Send a link instead ---------- */
 /* Colours and rules come from the page tokens in styles.css, so dark mode follows. */
 
-.send-top { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1fr); gap: clamp(32px, 6vw, 112px); align-items: start; }
-.send-top .section-body > p:not([data-pd-type="lead.section"]) { color: var(--muted); }
+.send-top, .send-intro { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1fr); gap: clamp(32px, 6vw, 112px); align-items: start; }
+.send .section-body > p:not([data-pd-type="lead.section"]) { color: var(--muted); }
 .send-icon { display: block; width: 18px; height: 18px; flex: none; }
+
+/* Folded, the guide is its headline and one button, so the page's own sections stay close. */
+.send-toggle { width: 100%; min-height: 72px; padding: 14px 24px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; align-items: center; border: 1px solid var(--rule-strong); background: transparent; color: var(--ink); font: inherit; text-align: left; cursor: pointer; transition: background 160ms ease, border-color 160ms ease, transform 140ms var(--ease); }
+.send-toggle[hidden] { display: none; }
+.send-toggle:active { transform: scale(.99); }
+.send-toggle-meta { color: var(--muted); }
+.send-toggle .send-icon { grid-column: 2; grid-row: 1 / span 2; width: 20px; height: 20px; transition: transform 300ms var(--ease); }
+.send-toggle[aria-expanded="true"] { border-color: var(--ink); }
+.send-toggle[aria-expanded="true"] .send-icon { transform: rotate(180deg); }
+.send-intro { margin-top: 28px; }
+.send[data-open="true"] .send-more { animation: rise-in 420ms var(--ease) both; }
+.send-intro > .section-body { grid-column: 2; }
+.send-fold { margin-top: 28px; }
+.send-fold[hidden] { display: none; }
 
 /* The short answer: one card per pick. */
 .send-picks { margin-top: clamp(44px, 5vw, 80px); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
@@ -92,6 +106,7 @@
 .send-leftout .send-icon { display: inline-block; width: 14px; height: 14px; margin-left: 2px; vertical-align: -.1em; }
 
 @media (hover: hover) and (pointer: fine) {
+  .send-toggle:hover { background: color-mix(in srgb, var(--ink) 5%, transparent); }
   .send-chip:hover { background: color-mix(in srgb, var(--ink) 7%, transparent); }
   .send-chip[aria-pressed="true"]:hover { background: color-mix(in srgb, var(--ink) 86%, transparent); }
   .send-pick-link:hover .send-icon { transform: translateX(3px); }
@@ -111,7 +126,8 @@
 }
 
 @media (max-width: 900px) {
-  .send-top, .send-compare-head, .send-rules { grid-template-columns: minmax(0, 1fr); }
+  .send-top, .send-intro, .send-compare-head, .send-rules { grid-template-columns: minmax(0, 1fr); }
+  .send-intro > .section-body { grid-column: auto; }
   .svc-how-body { grid-template-columns: minmax(0, 1fr); }
   .svc-steps { grid-row: auto; }
 }
@@ -131,9 +147,10 @@
   .svc-fact dt { margin-bottom: 4px; }
   .svc::before { left: -8px; }
   .send-rule-list li { padding-left: 40px; }
+  .send-toggle { padding: 14px 18px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .svc::before, .svc-fact, .send-chip, .svc-how > summary .send-icon { transition: none; }
-  .svc-how-body { animation: none; }
+  .svc::before, .svc-fact, .send-chip, .svc-how > summary .send-icon, .send-toggle, .send-toggle .send-icon { transition: none; }
+  .svc-how-body, .send[data-open="true"] .send-more { animation: none; }
 }
