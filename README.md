@@ -58,7 +58,8 @@ To ship a change to pitch.dog:
 - React + Vite UI with responsive desktop/mobile states.
 - A dedicated worker (`src/workers/pdf.worker.ts`) runs the engine in `src/lib/engine/`. The page and the worker speak the message types in `src/lib/engine/protocol.ts`.
 - QPDF WASM reads the PDF's structure as JSON (pages, images, forms, encryption), pulls out image data, swaps rewritten images back in by object number, and cuts page ranges for splits. Images are handled once each, even when every page shares one resource dictionary.
-- The browser's own codecs resize and re-save images (`createImageBitmap`, `OffscreenCanvas`, `CompressionStream`), spread over a few nested image workers (`src/workers/image.worker.ts`).
+- Images are found wherever a page draws them, including inside groups (form XObjects) and as soft masks, which follow their image. JPEGs a PDF compressor deflated again are unwrapped first; 16-bit samples become 8-bit.
+- The browser's own codecs resize and re-save images (`createImageBitmap`, `OffscreenCanvas`, `CompressionStream`), spread over a few nested image workers (`src/workers/image.worker.ts`). Canvas only writes three-channel JPEGs, so gray photos and JPEG masks go through the engine's own one-channel encoder (`src/lib/engine/grayjpeg.ts`).
 - Order: the untouched original if it fits; a lossless tidy when it could plausibly fit; then a quality ladder measured in pixels across the slide (3840, 2880, 2400, then a 1920-pixel floor). Each rung starts from the original, and the sharpest one that measures under the budget wins. A small file is never padded toward the ceiling.
 - Below the floor the deck is split into measured parts: the fewest emails, at the sharpest rung that still needs no more of them.
 - Every result is re-read before it is offered: same page count, same page sizes, sound structure.
@@ -80,6 +81,7 @@ Document bytes are kept in memory only. They are not written to localStorage, In
 - Password-protected or permission-restricted PDFs, and PDFs containing forms, signatures, attachments, or scripts, are refused rather than silently rewritten. Export a flattened copy first.
 - The page accepts PDFs up to 200 MiB (about 210 MB), or 80 MiB (about 84 MB) on devices reporting 2 GB of memory or less. Larger PDFs need splitting in the user’s PDF application first.
 - Compression is tuned for presentation decks, not archival PDF optimization. Visual differences can occur in raster images; text and page geometry are checked.
+- CMYK, indexed and other colour spaces, 1-bit images and JPEG 2000 are left exactly as they are, as are vector drawings (Figma's outlined text can be several MB of a deck).
 - `npm run build` assumes the site is served at `/`; `npm run build:pitchdog` builds for `/email-my-deck/`. Any other path needs `EMD_BASE` set at build time.
 - `frame-ancestors 'none'` is intentional. The standalone site should not be embedded in an iframe without a security review.
 

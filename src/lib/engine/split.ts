@@ -108,7 +108,7 @@ function partEstimator(inspection: Inspection, fileBytes: number): (start: numbe
   const { graph, pages, images } = inspection
   const contentBytes = pages.map((page) => page.contents.reduce((sum, ref) => sum + graph.streamLength(ref), 0))
   const imagesByPage = pages.map(() => [] as Array<{ ref: string; bytes: number }>)
-  for (const image of images) for (const page of image.pages) imagesByPage[page - 1]?.push({ ref: image.ref, bytes: image.bytes })
+  for (const image of images) for (const page of image.reach) imagesByPage[page - 1]?.push({ ref: image.ref, bytes: image.bytes })
   const allImages = images.reduce((sum, image) => sum + image.bytes, 0)
   const allContent = contentBytes.reduce((sum, bytes) => sum + bytes, 0)
   const shared = Math.max(0, fileBytes - allImages - allContent)

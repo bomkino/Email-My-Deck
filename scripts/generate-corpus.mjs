@@ -1,4 +1,5 @@
 import { mkdir, writeFile } from 'node:fs/promises'
+import { deflateSync } from 'node:zlib'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import jpeg from 'jpeg-js'
@@ -122,11 +123,43 @@ async function imageDeck(pageCount, name) {
   return pdf.save({ useObjectStreams: true })
 }
 
+// A Figma export run through iLovePDF: wide 2576×1080 pt slides, every photo
+// inside a transparency group inside another, each JPEG deflated a second
+// time, a lossless gray vignette as its soft mask, and a gray photo stored
+// losslessly. Engines that only look at a page's own images miss all of it.
+async function designToolDeck(pageCount) {
+  const pdf = await PDFDocument.create()
+  const context = pdf.context
+  const group = { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 2576, 1080], Group: { S: 'Transparency' } }
+  for (let i = 0; i < pageCount; i += 1) {
+    const [width, height] = [3072, 1288]
+    const vignette = Buffer.alloc(width * height)
+    for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) vignette[y * width + x] = Math.max(0, 255 - Math.floor(Math.hypot(x - width / 2, (y - height / 2) * 2) / 9))
+    const mask = context.register(context.stream(deflateSync(vignette), { Type: 'XObject', Subtype: 'Image', Width: width, Height: height, ColorSpace: 'DeviceGray', BitsPerComponent: 8, Filter: 'FlateDecode' }))
+    const photo = context.register(context.stream(deflateSync(makePhoto(width, height, 15485863 * (i + 1))), { Type: 'XObject', Subtype: 'Image', Width: width, Height: height, ColorSpace: 'DeviceRGB', BitsPerComponent: 8, Filter: ['FlateDecode', 'DCTDecode'], SMask: mask }))
+    const [grayWidth, grayHeight] = [1600, 1600]
+    const gray = Buffer.alloc(grayWidth * grayHeight)
+    let state = i + 1
+    for (let p = 0; p < gray.length; p += 1) {
+      state = (1664525 * state + 1013904223) >>> 0
+      gray[p] = Math.max(0, Math.min(255, 128 + 90 * Math.sin((p % grayWidth) / 90) * Math.cos(Math.floor(p / grayWidth) / 70) + ((state >>> 24) - 128) / 6))
+    }
+    const portrait = context.register(context.stream(deflateSync(gray), { Type: 'XObject', Subtype: 'Image', Width: grayWidth, Height: grayHeight, ColorSpace: 'DeviceGray', BitsPerComponent: 8, Filter: 'FlateDecode' }))
+    const inner = context.register(context.stream('q 2576 0 0 1080 0 0 cm /Im0 Do Q q 600 0 0 600 1880 380 cm /Im1 Do Q', { ...group, Resources: { XObject: { Im0: photo, Im1: portrait } } }))
+    const outer = context.register(context.stream('q /Fm0 Do Q', { ...group, Resources: { XObject: { Fm0: inner } } }))
+    const page = pdf.addPage([2576, 1080])
+    page.node.set(PDFName.of('Resources'), context.obj({ XObject: { Fm1: outer } }))
+    page.node.set(PDFName.of('Contents'), context.register(context.stream('q /Fm1 Do Q')))
+  }
+  return pdf.save({ useObjectStreams: true })
+}
+
 const photos = await photoDeck(10, 'Photo deck')
 await writeFile(new URL('vector-deck.pdf', corpusDir), await vectorDeck())
 await writeFile(new URL('photo-deck.pdf', corpusDir), photos)
 await writeFile(new URL('shared-resources-deck.pdf', corpusDir), await sharedResourcesDeck(12))
 await writeFile(new URL('email-pressure-test.pdf', corpusDir), await imageDeck(24, 'Email pressure test'))
+await writeFile(new URL('design-tool-deck.pdf', corpusDir), await designToolDeck(6))
 await writeFile(new URL('forms-deck.pdf', corpusDir), await formsDeck(photos))
 await writeFile(new URL('restricted-deck.pdf', corpusDir), await restrictedDeck(photos))
 await writeFile(new URL('README.md', corpusDir), `# Synthetic corpus
@@ -139,6 +172,7 @@ Generated locally with \`scripts/generate-corpus.mjs\`. These files contain no u
 | photo-deck.pdf | Camera-sized photos on 1280×720 slides: resized to screen size in one file |
 | shared-resources-deck.pdf | LibreOffice-style shared resources: images handled once, split parts carry only their own images |
 | email-pressure-test.pdf | Noise images that cannot compress: measured split |
+| design-tool-deck.pdf | Figma and iLovePDF shapes: photos inside nested groups, JPEGs deflated twice, soft masks, lossless gray photos: one file |
 | forms-deck.pdf | The photo deck plus a form field: refused as protected |
 | restricted-deck.pdf | The photo deck, opening without a password but forbidding changes: refused as restricted |
 `)

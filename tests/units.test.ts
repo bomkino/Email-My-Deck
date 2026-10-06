@@ -5,7 +5,8 @@ import { placementsForPage, scanContent } from '../src/lib/engine/content'
 import { mapLimit } from '../src/lib/engine/engine'
 import { MESSAGES, toEngineError } from '../src/lib/engine/errors'
 import type { ImageRecord, PageInfo } from '../src/lib/engine/inspect'
-import { looksLikePdf } from '../src/lib/engine/inspect'
+import { inspectionFromJson, looksLikePdf } from '../src/lib/engine/inspect'
+import { encodeGrayJpeg } from '../src/lib/engine/grayjpeg'
 import { readJpegInfo, stripJpegMetadata } from '../src/lib/engine/jpeg'
 import { acceptOutput, calibrate, chooseRungs, emptyCalibration, planImage, predictImageBytes } from '../src/lib/engine/ladder'
 import { PdfGraph } from '../src/lib/engine/pdfjson'
@@ -49,6 +50,33 @@ describe('content stream scanner', () => {
   })
 })
 
+describe('image inventory', () => {
+  it('finds photos inside nested groups and soft masks shared by several images', () => {
+    const photo = (extra: Record<string, unknown> = {}) => ({ stream: { dict: { '/Subtype': '/Image', '/Width': 2000, '/Height': 1000, '/BitsPerComponent': 8, '/ColorSpace': '/DeviceRGB', '/Filter': ['/FlateDecode', '/DCTDecode'], '/Length': 400_000, ...extra } } })
+    const inspection = inspectionFromJson({
+      pages: [
+        { object: '1 0 R', contents: [], images: [] },
+        { object: '2 0 R', contents: [], images: [{ object: '6 0 R', width: 2000, height: 1000, filter: ['/DCTDecode'], colorspace: '/DeviceRGB', bitspercomponent: 8, filterable: false }] },
+      ],
+      qpdf: [{ jsonversion: 2, maxobjectid: 9 }, {
+        'obj:1 0 R': { value: { '/Type': '/Page', '/MediaBox': [0, 0, 960, 540], '/Resources': { '/XObject': { '/Fm0': '3 0 R' } } } },
+        'obj:2 0 R': { value: { '/Type': '/Page', '/MediaBox': [0, 0, 960, 540], '/Resources': { '/XObject': { '/Im0': '6 0 R' } } } },
+        'obj:3 0 R': { stream: { dict: { '/Subtype': '/Form', '/Resources': { '/XObject': { '/Fm1': '4 0 R' } } } } },
+        'obj:4 0 R': { stream: { dict: { '/Subtype': '/Form', '/Resources': { '/XObject': { '/Im1': '5 0 R' } } } } },
+        'obj:5 0 R': photo({ '/SMask': '7 0 R' }),
+        'obj:6 0 R': photo({ '/SMask': '7 0 R', '/Filter': '/DCTDecode' }),
+        'obj:7 0 R': { stream: { dict: { '/Subtype': '/Image', '/Width': 2000, '/Height': 1000, '/BitsPerComponent': 16, '/ColorSpace': '/DeviceGray', '/Filter': '/FlateDecode', '/Length': 90_000 } } },
+      }],
+    })
+    const byRef = new Map(inspection.images.map((image) => [image.ref, image]))
+    // QPDF lists only page 2's own image; the deflated JPEG two groups down is found too.
+    expect(byRef.get('5 0 R')).toMatchObject({ kind: 'jpeg', pages: [], reach: [1] })
+    expect(byRef.get('6 0 R')).toMatchObject({ kind: 'jpeg', pages: [2], reach: [2] })
+    // The shared 16-bit mask goes wherever either image goes.
+    expect(byRef.get('7 0 R')).toMatchObject({ kind: 'raw', bitsPerComponent: 16, maskOf: ['6 0 R', '5 0 R'], reach: [1, 2] })
+  })
+})
+
 describe('JPEG helpers', () => {
   it('reads size, components and an estimated quality', () => {
     const info = readJpegInfo(photoJpeg(64, 32, 1, 90))
@@ -67,10 +95,27 @@ describe('JPEG helpers', () => {
     expect(stripped.byteLength).toBe(plain.byteLength)
     expect(jpeg.decode(stripped, { useTArray: true }).width).toBe(32)
   })
+
+  it('writes one-channel JPEGs that decode close to the input, including edge blocks', () => {
+    for (const [width, height] of [[1, 1], [13, 9], [301, 77]]) {
+      const samples = new Uint8Array(width * height)
+      for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) samples[y * width + x] = 128 + 100 * Math.sin(x / 9) * Math.cos(y / 7)
+      const bytes = encodeGrayJpeg(samples, width, height, 0.76)
+      expect(readJpegInfo(bytes)).toMatchObject({ width, height, components: 1, quality: 76 })
+      const decoded = jpeg.decode(bytes, { useTArray: true, formatAsRGBA: true })
+      let squared = 0
+      for (let pixel = 0; pixel < width * height; pixel += 1) squared += (decoded.data[pixel * 4] - samples[pixel]) ** 2
+      // Mean error under 3 levels out of 255 (PSNR above 38 dB).
+      expect(Math.sqrt(squared / (width * height))).toBeLessThan(3)
+    }
+    // Lower quality, fewer bytes.
+    const flat = new Uint8Array(256 * 256).map((_, index) => (index * 37) % 251)
+    expect(encodeGrayJpeg(flat, 256, 256, 0.5).byteLength).toBeLessThan(encodeGrayJpeg(flat, 256, 256, 0.9).byteLength)
+  })
 })
 
 function image(overrides: Partial<ImageRecord> = {}): ImageRecord {
-  return { ref: '5 0 R', width: 4000, height: 2250, bitsPerComponent: 8, colorModel: 'rgb', filters: ['/DCTDecode'], bytes: 3_000_000, hasSoftMask: false, hasMatte: false, pages: [1], kind: 'jpeg', ...overrides }
+  return { ref: '5 0 R', width: 4000, height: 2250, bitsPerComponent: 8, colorModel: 'rgb', filters: ['/DCTDecode'], bytes: 3_000_000, hasSoftMask: false, hasMatte: false, pages: [1], reach: [1], kind: 'jpeg', ...overrides }
 }
 
 const slide: PageInfo[] = [{ number: 1, ref: '3 0 R', width: 960, height: 540, contents: [], resources: null }]
@@ -99,8 +144,12 @@ describe('quality ladder', () => {
   })
 
   it('keeps gray images gray and leaves lossless graphics alone unless they shrink', () => {
-    const gray = planImage(image({ colorModel: 'gray', kind: 'raw', filters: ['/FlateDecode'] }), [{ page: 1, width: 240, height: 135 }], slide)
-    expect(gray.targets[0]).toMatchObject({ format: 'flate-gray', resized: true })
+    const placed = [{ page: 1, width: 240, height: 135 }]
+    // Canvas JPEGs are three-channel, so gray photos get the engine's own one-channel JPEG.
+    expect(planImage(image({ colorModel: 'gray', kind: 'raw', filters: ['/FlateDecode'] }), placed, slide).targets[0]).toMatchObject({ format: 'jpeg-gray', resized: true })
+    expect(planImage(image({ colorModel: 'gray', kind: 'jpeg', filters: ['/FlateDecode', '/DCTDecode'], maskOf: ['9 0 R'] }), placed, slide).targets[0]).toMatchObject({ format: 'jpeg-gray', resized: true })
+    // A mask stored losslessly stays lossless: JPEG ringing would show along its edges.
+    expect(planImage(image({ colorModel: 'gray', kind: 'raw', filters: ['/FlateDecode'], maskOf: ['9 0 R'] }), placed, slide).targets[0]).toMatchObject({ format: 'flate-gray', resized: true })
     const graphic = image({ kind: 'raw', filters: ['/FlateDecode'], width: 1000, height: 500, bytes: 50_000 })
     expect(planImage(graphic, [{ page: 1, width: 960, height: 480 }], slide).targets[0]).toBeNull()
     expect(planImage(graphic, [{ page: 1, width: 96, height: 48 }], slide).targets[0]).toMatchObject({ format: 'flate-rgb', resized: true })

@@ -1,14 +1,17 @@
 // @vitest-environment node
+import { deflateSync } from 'node:zlib'
 import { PDFDocument, PDFName, PDFRawStream } from 'pdf-lib'
 import { describe, expect, it } from 'vitest'
 import { toOutcome } from '../src/lib/compression'
 import type { CodecOutput } from '../src/lib/engine/codec'
 import { compressDocument, type EngineDeps } from '../src/lib/engine/engine'
 import { EngineError } from '../src/lib/engine/errors'
+import { encodeGrayJpeg } from '../src/lib/engine/grayjpeg'
+import { readJpegInfo } from '../src/lib/engine/jpeg'
 import type { ProgressEvent } from '../src/lib/engine/progress'
 import { splitDocument } from '../src/lib/engine/split'
 import { getTargetProfile, rawBudgetBytes } from '../src/lib/profiles'
-import { addJavaScript, addSignatureField, nodeCodec, nodeQpdf, pageCount, photoDeck, qpdfTransform, textDeck } from './helpers/engine'
+import { addJavaScript, addSignatureField, nodeCodec, nodeQpdf, pageCount, photoDeck, photoJpeg, qpdfTransform, textDeck } from './helpers/engine'
 
 function deps(events: ProgressEvent[] = [], log: CodecOutput[][] = []): EngineDeps {
   return { qpdf: nodeQpdf, codec: nodeCodec(log), onProgress: (event) => events.push(event) }
@@ -123,6 +126,74 @@ describe('compressDocument', () => {
     const parts = await splitDocument(input, onePage, { qpdf: nodeQpdf })
     expect(parts.length).toBeGreaterThanOrEqual(2)
     expect(parts.every((part) => part.bytes.byteLength <= onePage)).toBe(true)
+  })
+})
+
+/**
+ * The shapes a Figma export run through iLovePDF produces, one per page, each
+ * photo drawn at 120 × 67.5 pt on a 960 × 540 pt slide:
+ * 1. a JPEG deflated a second time ([/FlateDecode /DCTDecode]);
+ * 2. a JPEG inside a group inside a group, with a soft mask that is itself a deflated gray JPEG;
+ * 3. 16-bit RGB samples.
+ */
+async function designToolDeck(): Promise<Uint8Array> {
+  const document = await PDFDocument.create()
+  const context = document.context
+  const [width, height] = [800, 450]
+  const draw = 'q 120 0 0 67.5 40 40 cm /Im0 Do Q'
+  const image = (dict: Record<string, unknown>, data: Uint8Array) =>
+    context.register(context.stream(data, { Type: 'XObject', Subtype: 'Image', Width: width, Height: height, BitsPerComponent: 8, ...dict } as never))
+  const page = (resources: Record<string, unknown>, content: string) => {
+    const added = document.addPage([960, 540])
+    added.node.set(PDFName.of('Resources'), context.obj(resources as never))
+    added.node.set(PDFName.of('Contents'), context.register(context.stream(content)))
+  }
+
+  page({ XObject: { Im0: image({ ColorSpace: 'DeviceRGB', Filter: ['FlateDecode', 'DCTDecode'] }, deflateSync(photoJpeg(width, height, 1))) } }, draw)
+
+  const alpha = new Uint8Array(width * height).map((_, index) => 128 + 120 * Math.sin((index % width) / 23) * Math.cos(Math.floor(index / width) / 19))
+  const mask = image({ ColorSpace: 'DeviceGray', Filter: ['FlateDecode', 'DCTDecode'] }, deflateSync(encodeGrayJpeg(alpha, width, height, 0.95)))
+  const masked = image({ ColorSpace: 'DeviceRGB', Filter: 'DCTDecode', SMask: mask }, photoJpeg(width, height, 2))
+  const group = { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 960, 540], Group: { S: 'Transparency' } }
+  const inner = context.register(context.stream(draw, { ...group, Resources: { XObject: { Im0: masked } } } as never))
+  const outer = context.register(context.stream('q /Fm0 Do Q', { ...group, Resources: { XObject: { Fm0: inner } } } as never))
+  page({ XObject: { Fm1: outer } }, 'q /Fm1 Do Q')
+
+  // Photo-like 16-bit samples: a gradient plus noise in the high byte, noise in the low byte.
+  const samples = new Uint8Array(width * height * 6)
+  let state = 7
+  const noise = () => (state = (state * 1664525 + 1013904223) >>> 0) >>> 24
+  for (let index = 0; index < width * height * 3; index += 1) {
+    samples[index * 2] = (((index / 3) % width) / 4 + (noise() >> 4)) & 0xff
+    samples[index * 2 + 1] = noise()
+  }
+  page({ XObject: { Im0: image({ ColorSpace: 'DeviceRGB', BitsPerComponent: 16, Filter: 'FlateDecode' }, deflateSync(samples)) } }, draw)
+  return document.save({ useObjectStreams: false })
+}
+
+describe('decks from design tools', () => {
+  it('resizes deflated JPEGs, photos inside groups, their soft masks and 16-bit images', async () => {
+    const input = await designToolDeck()
+    const budget = Math.floor(input.byteLength * 0.5)
+    const result = await compressDocument(input.slice(), budget, deps())
+    expect(result.kind).toBe('images')
+    expect(result.bytes.byteLength).toBeLessThanOrEqual(budget)
+    expect(result.images).toEqual({ total: 4, resaved: 0, resized: 4, untouched: 0 })
+    // The sharpest rung keeps 3840 / 960 × 120 = 480 px across each 800 px image, masks included.
+    const output = await PDFDocument.load(result.bytes)
+    let gray = 0
+    for (const [, object] of output.context.enumerateIndirectObjects()) {
+      if (!(object instanceof PDFRawStream) || object.dict.get(PDFName.of('Subtype'))?.toString() !== '/Image') continue
+      expect(object.dict.get(PDFName.of('Width'))?.toString()).toBe('480')
+      expect(object.dict.get(PDFName.of('BitsPerComponent'))?.toString()).toBe('8')
+      expect(object.dict.get(PDFName.of('Filter'))?.toString()).toBe('/DCTDecode')
+      if (object.dict.get(PDFName.of('ColorSpace'))?.toString() !== '/DeviceGray') continue
+      // A soft mask must stay one gray channel; canvas cannot write that, so the engine does.
+      gray += 1
+      expect(readJpegInfo(object.contents)).toMatchObject({ width: 480, height: 270, components: 1 })
+    }
+    expect(gray).toBe(1)
+    expect(await pageCount(result.bytes)).toBe(3)
   })
 })
 

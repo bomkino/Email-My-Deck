@@ -1,3 +1,4 @@
+import { encodeGrayJpeg } from './grayjpeg'
 import { stripJpegMetadata } from './jpeg'
 import type { OutputFormat } from './ladder'
 
@@ -22,6 +23,11 @@ export function browserCodecAvailable(): boolean {
 export async function deflate(data: Uint8Array): Promise<Uint8Array> {
   // "deflate" in the Compression Streams API is the zlib format, which is exactly FlateDecode.
   const stream = new Blob([data as BlobPart]).stream().pipeThrough(new CompressionStream('deflate'))
+  return new Uint8Array(await new Response(stream).arrayBuffer())
+}
+
+export async function inflate(data: Uint8Array): Promise<Uint8Array> {
+  const stream = new Blob([data as BlobPart]).stream().pipeThrough(new DecompressionStream('deflate'))
   return new Uint8Array(await new Response(stream).arrayBuffer())
 }
 
@@ -114,7 +120,8 @@ async function render(surfaces: Surface[], output: CodecOutput): Promise<CodecRe
   } else {
     for (let pixel = 0, offset = 0; pixel < count; pixel += 1, offset += 4) samples[pixel] = pixels[offset]
   }
-  return { bytes: await deflate(samples), width: output.width, height: output.height, format: output.format }
+  const bytes = output.format === 'jpeg-gray' ? encodeGrayJpeg(samples, output.width, output.height, output.quality ?? 0.82) : await deflate(samples)
+  return { bytes, width: output.width, height: output.height, format: output.format }
 }
 
 export const browserCodec: ImageCodec = {
