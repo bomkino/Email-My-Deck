@@ -10,16 +10,24 @@ import type { ImageRecord, PageInfo } from './inspect'
  * disagree wildly about page size (Keynote 1920 pt, PowerPoint 960 pt, A4 595 pt).
  */
 export type Rung = {
-  id: 'sharp' | 'retina' | 'screen' | 'floor'
+  id: 'sharp' | 'retina' | 'screen' | 'hd' | 'lean' | 'floor'
   longEdgePx: number
   jpegQuality: number
 }
 
+/**
+ * Each rung is roughly a fifth to a third lighter than the one above. Below
+ * 1920 px, size and quality step down together: a slightly softer photo reads
+ * better on screen than a smaller sharp one. 1440 px across the slide is the
+ * lightest we would still call good-looking at screen size; below it, split.
+ */
 export const RUNGS: readonly Rung[] = [
   { id: 'sharp', longEdgePx: 3840, jpegQuality: 0.85 },
   { id: 'retina', longEdgePx: 2880, jpegQuality: 0.82 },
   { id: 'screen', longEdgePx: 2400, jpegQuality: 0.8 },
-  { id: 'floor', longEdgePx: 1920, jpegQuality: 0.76 },
+  { id: 'hd', longEdgePx: 1920, jpegQuality: 0.76 },
+  { id: 'lean', longEdgePx: 1680, jpegQuality: 0.72 },
+  { id: 'floor', longEdgePx: 1440, jpegQuality: 0.66 },
 ]
 
 /** Only resize when it removes a meaningful share of pixels; tiny resamples blur for little gain. */
@@ -111,7 +119,7 @@ export function acceptOutput(target: ImageTarget, originalBytes: number, outputB
  * this deck's own images as they are processed (defaults until then).
  */
 export const PIXEL_EXPONENT = 0.85
-const DEFAULT_Q = { photo: [0.75, 0.7, 0.65, 0.6], graphic: [1, 1, 1, 1] }
+const DEFAULT_Q = { photo: [0.75, 0.7, 0.65, 0.6, 0.55, 0.5], graphic: [1, 1, 1, 1, 1, 1] }
 
 type Sample = { base: number; after: number }
 export type Calibration = { photo: Sample[]; graphic: Sample[] }
@@ -154,10 +162,12 @@ export type RungChoice = {
   expected: number | null
 }
 
+/** Share of the budget that filling aims for, leaving room for structure the prediction does not see. */
+export const FILL_TARGET = 0.985
 /**
  * Decide which rungs are worth encoding for the rest of the deck. The best
  * rung predicted to fit is encoded together with the next one down as a
- * safety net, plus the one above when it is borderline.
+ * safety net, and the one above, whose sharper images fill the room left.
  */
 export function chooseRungs(predicted: number[], budget: number): RungChoice {
   const fits = predicted.map((bytes) => bytes <= budget * 0.97)
@@ -173,7 +183,7 @@ export function chooseRungs(predicted: number[], budget: number): RungChoice {
     return { encode, expected: null }
   }
   const encode = [best]
-  if (best > 0 && predicted[best - 1] <= budget * 1.06) encode.unshift(best - 1)
+  if (best > 0) encode.unshift(best - 1)
   if (best + 1 < predicted.length) encode.push(best + 1)
   return { encode, expected: best }
 }

@@ -1,11 +1,11 @@
-import { inflate, type ImageCodec, type CodecOutput, type CodecSource } from './codec'
-import { collectFormRefs, placementsForPage, type Placement } from './content'
+import { deflate, inflate, type ImageCodec, type CodecOutput, type CodecSource } from './codec'
+import { collectFormRefs, entryScales, placementsForPage, roundPaths, untrackedDrawing, type Placement } from './content'
 import { EngineError, MESSAGES, protectedError } from './errors'
 import { inspectionFromJson, inspectWithQpdf, INSPECT_ARGS, looksLikePdf, type ImageRecord, type Inspection } from './inspect'
 import { readJpegInfo } from './jpeg'
-import { acceptOutput, calibrate, chooseRungs, emptyCalibration, planImage, predictImageBytes, RUNGS, sameTarget, type ImagePlan, type ImageTarget, type Rung } from './ladder'
+import { acceptOutput, calibrate, chooseRungs, emptyCalibration, FILL_TARGET, planImage, predictImageBytes, RUNGS, sameTarget, type ImagePlan, type ImageTarget, type Rung } from './ladder'
 import { refNumber, type JsonDict, type QpdfJsonDocument } from './pdfjson'
-import { ProgressReporter, STAGE_LABELS, type ProgressEvent } from './progress'
+import { ProgressReporter, STAGE_BANDS, STAGE_LABELS, type ProgressEvent } from './progress'
 import { QpdfSession, type QpdfLoader } from './qpdf'
 
 export type EngineDeps = {
@@ -18,7 +18,36 @@ export type EngineDeps = {
 
 export type ImageStats = { total: number; resaved: number; resized: number; untouched: number }
 
-export type Attempt = { step: 'original' | 'lossless' | Rung['id']; bytes: number; fits: boolean; ms: number; predicted?: boolean }
+/**
+ * Why nothing fits one email.
+ * - quality-floor: photos are already as light as we would call good-looking.
+ * - not-photos: text outlines, drawings, fonts or other content we never rewrite fill most of the email on their own.
+ * - kept-images: images we deliberately leave alone (CMYK, JPEG 2000, 1-bit) fill most of it.
+ * - browser-cannot-resize: this browser cannot re-encode images at all.
+ */
+export type SplitReason = 'quality-floor' | 'not-photos' | 'kept-images' | 'browser-cannot-resize'
+
+/** Bytes of the lightest version, by kind: photos we rewrite, images we keep as they are, everything else. */
+export type Weight = { photosBytes: number; keptImagesBytes: number; otherBytes: number }
+
+/** Share of the budget that content we never rewrite may fill before it, not the photos, is the reason. */
+const NOT_PHOTOS_SHARE = 0.9
+
+export function splitReasonFor(weight: Weight, budget: number): Exclude<SplitReason, 'browser-cannot-resize'> {
+  const untouchable = weight.keptImagesBytes + weight.otherBytes
+  if (untouchable < budget * NOT_PHOTOS_SHARE) return 'quality-floor'
+  return weight.keptImagesBytes > weight.otherBytes ? 'kept-images' : 'not-photos'
+}
+
+export type Attempt = {
+  step: 'original' | 'lossless' | Rung['id']
+  bytes: number
+  fits: boolean
+  ms: number
+  predicted?: boolean
+  /** Some images were taken from sharper rungs to use the room this rung left. */
+  filled?: number
+}
 
 export type EngineResult = {
   /** original: untouched; lossless: structure only; images: images rewritten; split-needed: nothing fits, `bytes` is the version to split. */
@@ -31,7 +60,11 @@ export type EngineResult = {
   attempts: Attempt[]
   /** What was verified on the returned bytes. */
   checks: string[]
-  splitReason?: 'quality-floor' | 'browser-cannot-resize'
+  splitReason?: SplitReason
+  /** Where the lightest version's bytes are, when a split is needed. Decimal bytes. */
+  weight?: Weight
+  /** Drawings (page content and forms) whose path coordinates were rounded below what a screen shows, and the bytes that saved. */
+  paths?: { drawings: number; savedBytes: number }
   elapsedMs: number
   /** Session holding `bytes` at `path`, so an automatic split can reuse it. */
   session?: QpdfSession
@@ -62,6 +95,13 @@ const HEARTBEAT_MS = 400
 const PIXELS_PER_MS = 25_000
 /** Decoded pixels allowed in flight at once (about 4 bytes each, often twice), so phones are not run out of memory. */
 const MAX_PIXELS_IN_FLIGHT = 64_000_000
+/** Page width, in pixels, at which rounded path coordinates must still be exact to PATH_ERROR_PX: the sharpest rung. */
+const VECTOR_PX = RUNGS[0].longEdgePx
+/** Rounding drawings must save at least this much in all, or they stay exact. */
+const MIN_PATH_SAVING = 64 * 1024
+/** Room (share of the budget) a fitting result must leave before another full encode at a sharper rung is worth the wait. */
+const SHARPEN_ROOM = 0.05
+const SHARPEN_PASSES = 2
 
 function emptyStats(total = 0): ImageStats {
   return { total, resaved: 0, resized: 0, untouched: total }
@@ -125,6 +165,7 @@ export async function compressDocument(input: Uint8Array, budget: number, deps: 
 
   const eligible = inspection.images.filter((image) => image.kind)
   const allImages = inspection.images.length
+  const keptImagesBytes = inspection.images.reduce((sum, image) => sum + (image.kind ? 0 : image.bytes), 0)
 
   // 1. Lossless. Worth running only when non-JPEG data could shrink enough to fit.
   progress.enter('tidy')
@@ -160,6 +201,9 @@ export async function compressDocument(input: Uint8Array, budget: number, deps: 
   // Without a codec or rewritable images, the lightest lossless version is what gets split.
   if (!deps.codec || eligible.length === 0) {
     const path = tidyBytes !== null && tidyBytes < originalBytes ? '/work/tidy.pdf' : INPUT
+    const lightest = session.size(path)
+    const photosBytes = eligible.reduce((sum, image) => sum + image.bytes, 0)
+    const weight = { photosBytes, keptImagesBytes, otherBytes: Math.max(0, lightest - photosBytes - keptImagesBytes) }
     return keep({
       kind: 'split-needed',
       bytes: session.readFile(path),
@@ -169,7 +213,8 @@ export async function compressDocument(input: Uint8Array, budget: number, deps: 
       images: emptyStats(allImages),
       attempts,
       checks: path === INPUT ? ['unchanged'] : verifyCandidate(session, path, inspection),
-      splitReason: deps.codec ? 'quality-floor' : 'browser-cannot-resize',
+      splitReason: deps.codec ? splitReasonFor(weight, budget) : 'browser-cannot-resize',
+      weight,
       elapsedMs: now() - started,
     }, path)
   }
@@ -177,21 +222,28 @@ export async function compressDocument(input: Uint8Array, budget: number, deps: 
   // 2. The image ladder. Recompressing Flate again is only worth its time if the lossless pass showed it pays.
   const rewriteArgs = [...idArgs(inspection.encrypted), ...(tidyBytes !== null && tidyBytes < originalBytes * 0.98 ? LOSSLESS_ARGS : REWRITE_ARGS)]
   progress.enter('photos')
-  const placements = findPlacements(session, inspection)
+  const { placements, drawings } = findPlacements(session, inspection)
   const plans = eligible
     .map((image) => planImage(image, placements.get(image.ref), inspection.pages))
     .sort((a, b) => a.firstPage - b.firstPage || refNumber(a.image.ref) - refNumber(b.image.ref))
-  const baseBytes = (tidyBytes ?? originalBytes) - plans.reduce((sum, plan) => sum + plan.image.bytes, 0)
+  // Drawings get the same treatment at every rung: round them once, while the first photos encode.
+  const rounding = roundDrawings(session, inspection, drawings)
+  rounding.catch(() => {}) // Awaited below; this only keeps an early failure elsewhere from leaving it unhandled.
+  let rounded: RoundedDrawings = { objects: {}, streams: 0, savedBytes: 0 }
+  let baseBytes = (tidyBytes ?? originalBytes) - plans.reduce((sum, plan) => sum + plan.image.bytes, 0)
   const outputs = new Map<string, Map<number, StoredOutput>>()
+  // Rungs each image has been through, whether or not a lighter output was kept.
+  const attempted = new Map<string, Set<number>>()
   const calibration = emptyCalibration()
   const totalPixels = plans.reduce((sum, plan) => sum + plan.pixels, 0) || 1
 
-  const predictTotals = () => RUNGS.map((_, rung) => baseBytes + plans.reduce((sum, plan) => {
-    const stored = outputs.get(plan.image.ref)
-    if (stored?.has(rung)) return sum + (stored.get(rung)?.bytes ?? plan.image.bytes)
-    if (stored && !plan.targets[rung]) return sum + plan.image.bytes
-    return sum + predictImageBytes(plan, rung, calibration)
-  }, 0))
+  /** Bytes an image adds at a rung it has been through: its kept output, or the original. */
+  const bytesAt = (plan: ImagePlan, rung: number): number | null => {
+    if (!attempted.get(plan.image.ref)?.has(rung)) return null
+    return outputs.get(plan.image.ref)?.get(rung)?.bytes ?? plan.image.bytes
+  }
+  // Measured where an image has been through a rung, predicted elsewhere.
+  const predictTotals = () => RUNGS.map((_, rung) => baseBytes + plans.reduce((sum, plan) => sum + (bytesAt(plan, rung) ?? predictImageBytes(plan, rung, calibration)), 0))
 
   const encoded = new Set<number>()
   const eligibleBytes = plans.reduce((sum, plan) => sum + plan.image.bytes, 0)
@@ -228,6 +280,9 @@ export async function compressDocument(input: Uint8Array, budget: number, deps: 
           } finally {
             inFlight.delete(plan)
           }
+          const tried = attempted.get(plan.image.ref) ?? new Set<number>()
+          for (const rung of rungs) tried.add(rung)
+          attempted.set(plan.image.ref, tried)
           donePixels += plan.pixels
           progress.update(donePixels / totalPixels, { page: plan.firstPage, pages: inspection.pageCount })
         }, (plan) => plan.pixels, MAX_PIXELS_IN_FLIGHT)
@@ -244,10 +299,82 @@ export async function compressDocument(input: Uint8Array, budget: number, deps: 
   const firstWave = Math.min(learnCount, concurrency)
   await encodeImages(plans.slice(0, firstWave), allRungs)
   const plausible = plausibleRungs(predictTotals(), budget)
+  rounded = await rounding
+  baseBytes -= rounded.savedBytes
+  const paths = rounded.streams ? { drawings: rounded.streams, savedBytes: rounded.savedBytes } : undefined
   await encodeImages(plans.slice(firstWave, learnCount), plausible)
   const chosen = learnCount < plans.length ? chooseRungs(predictTotals(), budget).encode.filter((rung) => plausible.includes(rung) || rung === allRungs.length - 1) : plausible
   await encodeImages(plans.slice(learnCount), chosen)
   for (const rung of chosen) encoded.add(rung)
+
+  /** Which bytes an image would use at a rung: a stored output's path, or the original. */
+  const versionAt = (plan: ImagePlan, rung: number) => outputs.get(plan.image.ref)?.get(rung)?.path ?? 'original'
+  const pageArea = inspection.pages.map((page) => Math.max(1, page.width * page.height))
+  /** How much of the deck an image covers, in slides: what sharpening it is worth. */
+  const coverage = new Map(plans.map((plan) => {
+    const list = placements.get(plan.image.ref)
+    const slides = list?.length ? list.reduce((sum, placement) => sum + Math.min(1, (placement.width * placement.height) / (pageArea[placement.page - 1] ?? 1)), 0) : 1
+    return [plan.image.ref, Math.max(0.01, slides)]
+  }))
+
+  /**
+   * Use the room a fitting rung leaves: move images to sharper rungs they have
+   * already been through, cheapest bytes per slide covered first, then measure.
+   * Returns null when nothing could move or the result would not fit.
+   */
+  let fills = 0
+  const fillBudget = (rung: number, fittedBytes: number): { path: string; bytes: number; ms: number; choice: (plan: ImagePlan) => number } | null => {
+    if (rung === 0) return null
+    const chosen = new Map(plans.map((plan) => [plan.image.ref, rung]))
+    const base = fittedBytes - plans.reduce((sum, plan) => sum + (bytesAt(plan, rung) ?? plan.image.bytes), 0)
+    const pick = (target: number): number => {
+      for (const plan of plans) chosen.set(plan.image.ref, rung)
+      let total = fittedBytes
+      let moved = 0
+      const stuck = new Set<string>()
+      for (;;) {
+        let best: { plan: ImagePlan; to: number; extra: number; ratio: number } | null = null
+        for (const plan of plans) {
+          if (stuck.has(plan.image.ref)) continue
+          const from = chosen.get(plan.image.ref)!
+          const current = bytesAt(plan, from) ?? plan.image.bytes
+          for (let to = from - 1; to >= 0; to -= 1) {
+            const bytes = bytesAt(plan, to)
+            // Not been through that rung, or the same bytes there: look further up.
+            if (bytes === null || versionAt(plan, to) === versionAt(plan, from)) continue
+            const extra = bytes - current
+            const ratio = extra / ((from - to) * coverage.get(plan.image.ref)!)
+            if (!best || ratio < best.ratio) best = { plan, to, extra, ratio }
+            break
+          }
+        }
+        if (!best) break
+        if (total + best.extra > target) {
+          stuck.add(best.plan.image.ref)
+          continue
+        }
+        chosen.set(best.plan.image.ref, best.to)
+        total += best.extra
+        moved += 1
+      }
+      return moved
+    }
+    let target = budget * FILL_TARGET
+    for (let round = 0; round < 2; round += 1) {
+      const moved = pick(target)
+      if (!moved) return null
+      const snapshot = new Map(chosen)
+      const choice = (plan: ImagePlan) => snapshot.get(plan.image.ref) ?? rung
+      const result = assemble(session, inspection, plans, outputs, choice, `${rung}-fill${fills++}`, rewriteArgs, now, rounded)
+      attempts.push({ step: RUNGS[rung].id, bytes: result.bytes, fits: result.bytes <= budget, ms: result.ms, filled: moved })
+      if (result.bytes <= budget) return { ...result, choice }
+      session.remove(result.path)
+      // The file came out bigger than its parts predicted: aim lower by that much.
+      const predicted = base + plans.reduce((sum, plan) => sum + (bytesAt(plan, choice(plan)) ?? plan.image.bytes), 0)
+      target = budget * FILL_TARGET - (result.bytes - predicted)
+    }
+    return null
+  }
 
   // 3. Assemble the best encoded rung that is expected to fit, and measure it.
   progress.enter('verify')
@@ -258,23 +385,51 @@ export async function compressDocument(input: Uint8Array, budget: number, deps: 
         attempts.push({ step: RUNGS[rung].id, bytes: Math.round(totals[rung]), fits: false, ms: 0, predicted: true })
         continue
       }
-      const assembled = assemble(session, inspection, plans, outputs, rung, rewriteArgs, now)
+      const atRung = (_plan: ImagePlan) => rung
+      const assembled = assemble(session, inspection, plans, outputs, atRung, String(rung), rewriteArgs, now, rounded)
       attempts.push({ step: RUNGS[rung].id, bytes: assembled.bytes, fits: assembled.bytes <= budget, ms: assembled.ms })
       progress.update(0.5)
       if (assembled.bytes <= budget) {
-        const checks = verifyCandidate(session, assembled.path, inspection)
+        let best = { ...assembled, choice: atRung }
+        const filled = fillBudget(rung, assembled.bytes)
+        if (filled) {
+          session.remove(assembled.path)
+          best = filled
+        }
+        // Estimates can run high for a whole deck. While real room is left and a sharper
+        // rung is untried, encode it for every image and fill again.
+        for (let sharper = Math.min(...encoded) - 1, passes = 0; sharper >= 0 && passes < SHARPEN_PASSES; sharper -= 1, passes += 1) {
+          if (budget * FILL_TARGET - best.bytes < budget * SHARPEN_ROOM) break
+          // Most of what is left of the bar before the end of checking, so it keeps moving.
+          progress.enter('resize', 'Using the room left for sharper photos', [progress.fraction, progress.fraction + (STAGE_BANDS.verify[1] - progress.fraction) * 0.7])
+          donePixels = 0
+          await encodeImages(plans.filter((plan) => !attempted.get(plan.image.ref)?.has(sharper)), [sharper], 'Using the room left for sharper photos')
+          encoded.add(sharper)
+          progress.enter('verify')
+          const refilled = fillBudget(rung, assembled.bytes)
+          if (!refilled || refilled.bytes <= best.bytes) {
+            if (refilled) session.remove(refilled.path)
+            break
+          }
+          session.remove(best.path)
+          best = refilled
+        }
+        // Report the lightest rung any image ended up on.
+        const reported = Math.max(...plans.map((plan) => best.choice(plan)))
+        const checks = verifyCandidate(session, best.path, inspection)
         progress.update(1)
         return keep({
           kind: 'images',
-          bytes: session.readFile(assembled.path),
-          rung: RUNGS[rung],
+          bytes: session.readFile(best.path),
+          rung: RUNGS[reported],
           pageCount: inspection.pageCount,
           pageSizes: inspection.pages.map((page) => [page.width, page.height]),
-          images: imageStats(plans, outputs, rung, allImages),
+          images: imageStats(plans, outputs, best.choice, allImages),
           attempts,
           checks,
+          paths,
           elapsedMs: now() - started,
-        }, assembled.path)
+        }, best.path)
       }
       session.remove(assembled.path)
     }
@@ -303,7 +458,9 @@ export async function compressDocument(input: Uint8Array, budget: number, deps: 
   const partsFor = (bytes: number) => Math.ceil(bytes / (budget * 0.92))
   const fewest = partsFor(totals[floor])
   const splitRung = [...encoded].sort((a, b) => a - b).find((rung) => partsFor(totals[rung]) <= fewest) ?? floor
-  const assembled = assemble(session, inspection, plans, outputs, splitRung, rewriteArgs, now)
+  const photosBytes = plans.reduce((sum, plan) => sum + (bytesAt(plan, floor) ?? plan.image.bytes), 0)
+  const weight = { photosBytes: Math.round(photosBytes), keptImagesBytes, otherBytes: Math.max(0, Math.round(totals[floor] - photosBytes - keptImagesBytes)) }
+  const assembled = assemble(session, inspection, plans, outputs, () => splitRung, `${splitRung}-split`, rewriteArgs, now, rounded)
   attempts.push({ step: RUNGS[splitRung].id, bytes: assembled.bytes, fits: false, ms: assembled.ms })
   const checks = verifyCandidate(session, assembled.path, inspection)
   progress.update(1)
@@ -313,10 +470,12 @@ export async function compressDocument(input: Uint8Array, budget: number, deps: 
     rung: RUNGS[splitRung],
     pageCount: inspection.pageCount,
     pageSizes: inspection.pages.map((page) => [page.width, page.height]),
-    images: imageStats(plans, outputs, splitRung, allImages),
+    images: imageStats(plans, outputs, () => splitRung, allImages),
     attempts,
     checks,
-    splitReason: 'quality-floor',
+    splitReason: splitReasonFor(weight, budget),
+    weight,
+    paths,
     elapsedMs: now() - started,
   }, assembled.path)
 }
@@ -436,7 +595,10 @@ function extractStreams(session: QpdfSession, refs: string[], decodeLevel: 'gene
   return result
 }
 
-function findPlacements(session: QpdfSession, inspection: Inspection): Map<string, Placement[]> {
+/** A content stream or form whose path coordinates can be rounded, with the pixels one of its units spans at most. */
+type Drawing = { ref: string; bytes: Uint8Array; pixelsPerUnit: number }
+
+function findPlacements(session: QpdfSession, inspection: Inspection): { placements: Map<string, Placement[]>; drawings: Drawing[] } {
   const { graph, pages } = inspection
   const forms = collectFormRefs(graph, pages.map((page) => page.resources))
   const contentRefs = [...new Set(pages.flatMap((page) => page.contents))]
@@ -447,21 +609,44 @@ function findPlacements(session: QpdfSession, inspection: Inspection): Map<strin
   }
   const placements = new Map<string, Placement[]>()
   const unknown = new Set<string>()
+  // Pages where something may draw the page's own images without a `Do` we follow.
+  const hiddenDrawing = new Set<number>()
+  // Pixels a unit of each stream spans when the page is shown VECTOR_PX wide, and streams drawn at sizes we do not know.
+  const pixelsPerUnit = new Map<string, number>()
+  const exact = new Set<string>()
+  const widen = (ref: string, pixels: number) => pixelsPerUnit.set(ref, Math.max(pixelsPerUnit.get(ref) ?? 0, pixels))
   for (const page of pages) {
-    const found = placementsForPage(graph, page, source)
+    const untracked = untrackedDrawing(graph, page.resources)
+    for (const ref of untracked.images) unknown.add(ref)
+    for (const ref of untracked.forms) exact.add(ref)
+    if (untracked.inherits) hiddenDrawing.add(page.number)
+    const formScales = new Map<string, number>()
+    const found = placementsForPage(graph, page, source, formScales)
     if (!found) {
       for (const image of inspection.images) if (image.reach.includes(page.number)) unknown.add(image.ref)
+      for (const ref of [...page.contents, ...collectFormRefs(graph, [page.resources])]) exact.add(ref)
       continue
     }
     for (const [ref, list] of found) placements.set(ref, [...(placements.get(ref) ?? []), ...list])
+    const pagePixels = VECTOR_PX / Math.max(1, page.width, page.height)
+    const entry = page.contents.length > 1 ? entryScales(page.contents.map((ref) => source(ref) ?? new Uint8Array())) : [1]
+    page.contents.forEach((ref, index) => widen(ref, pagePixels * entry[index]))
+    for (const [ref, scale] of formScales) widen(ref, pagePixels * scale)
+  }
+  const drawings: Drawing[] = []
+  for (const [ref, pixels] of pixelsPerUnit) {
+    const bytes = source(ref)
+    if (bytes && !exact.has(ref)) drawings.push({ ref, bytes, pixelsPerUnit: pixels })
   }
   // Images drawn somewhere we could not follow keep their full size (a re-save is still allowed).
   for (const ref of unknown) placements.delete(ref)
   for (const image of inspection.images) {
     if (!placements.has(image.ref)) continue
-    // An image QPDF lists on a page where we saw no drawing may be used in a way we do not track.
+    // A page that names an image without drawing it simply does not use it (decks whose
+    // pages share one resource dictionary name every image everywhere), unless something
+    // on that page could draw it in a way we do not follow.
     const seen = new Set(placements.get(image.ref)?.map((placement) => placement.page))
-    if (image.pages.some((page) => !seen.has(page))) placements.delete(image.ref)
+    if (image.reach.some((page) => !seen.has(page) && hiddenDrawing.has(page))) placements.delete(image.ref)
   }
   // A soft mask is drawn wherever its images are. If any of them keeps full size, so does the mask.
   for (const image of inspection.images) {
@@ -473,7 +658,52 @@ function findPlacements(session: QpdfSession, inspection: Inspection): Map<strin
     }
     placements.set(image.ref, [...(placements.get(image.ref) ?? []), ...parents.flatMap((list) => list ?? [])])
   }
-  return placements
+  return { placements, drawings }
+}
+
+type StreamUpdate = { stream: { dict: JsonDict; datafile: string } }
+type RoundedDrawings = { objects: Record<string, StreamUpdate>; streams: number; savedBytes: number }
+
+/**
+ * Round path coordinates in every drawing whose size on the page we know, keep
+ * each one only when its compressed stream gets smaller, and stage the new
+ * streams for `assemble`. A stream used inside a pattern, soft mask or Type 3
+ * glyph, or on a page we could not read, is never touched.
+ */
+async function roundDrawings(session: QpdfSession, inspection: Inspection, drawings: Drawing[]): Promise<RoundedDrawings> {
+  const rounded: RoundedDrawings = { objects: {}, streams: 0, savedBytes: 0 }
+  for (const drawing of drawings.splice(0)) {
+    const dict = inspection.graph.streamDict(drawing.ref)
+    const storedBytes = dict ? inspection.graph.number(dict['/Length']) : null
+    if (!dict || !storedBytes) continue
+    const content = roundPaths(drawing.bytes, drawing.pixelsPerUnit)
+    if (!content) continue
+    let compressed: Uint8Array
+    let before = storedBytes
+    try {
+      compressed = await deflate(content)
+      // A stream stored uncompressed would be compressed on writing anyway: compare like with like.
+      if (dict['/Filter'] === undefined) before = Math.min(before, (await deflate(drawing.bytes)).byteLength)
+    } catch {
+      // No compression in this browser: keep every drawing as it is.
+      break
+    }
+    if (compressed.byteLength >= before) continue
+    const datafile = `/work/paths-${refNumber(drawing.ref)}.bin`
+    session.writeFile(datafile, compressed)
+    const next: JsonDict = { ...dict, '/Filter': '/FlateDecode' }
+    delete next['/DecodeParms']
+    delete next['/Length']
+    rounded.objects[`obj:${drawing.ref}`] = { stream: { dict: next, datafile } }
+    rounded.streams += 1
+    rounded.savedBytes += before - compressed.byteLength
+  }
+  // A few bytes are not worth touching anyone's drawings for.
+  if (rounded.savedBytes < MIN_PATH_SAVING) {
+    for (const { stream } of Object.values(rounded.objects)) session.remove(stream.datafile)
+    return { objects: {}, streams: 0, savedBytes: 0 }
+  }
+  return rounded
 }
 
 async function extractImages(session: QpdfSession, images: ImageRecord[]): Promise<Map<string, CodecSource>> {
@@ -572,27 +802,28 @@ function rewrittenDict(original: JsonDict, target: ImageTarget): JsonDict {
   return dict
 }
 
-function assemble(session: QpdfSession, inspection: Inspection, plans: ImagePlan[], outputs: Map<string, Map<number, StoredOutput>>, rung: number, args: string[], now: () => number): { path: string; bytes: number; ms: number } {
+/** Swap each image for its output at the rung `choice` picks for it (or keep the original), add the rounded drawings, and write the result. */
+function assemble(session: QpdfSession, inspection: Inspection, plans: ImagePlan[], outputs: Map<string, Map<number, StoredOutput>>, choice: (plan: ImagePlan) => number, tag: string, args: string[], now: () => number, drawings: RoundedDrawings): { path: string; bytes: number; ms: number } {
   const started = now()
-  const objects: Record<string, { stream: { dict: JsonDict; datafile: string } }> = {}
+  const objects: Record<string, StreamUpdate> = { ...drawings.objects }
   for (const plan of plans) {
-    const output = outputs.get(plan.image.ref)?.get(rung)
+    const output = outputs.get(plan.image.ref)?.get(choice(plan))
     const dict = output ? inspection.graph.streamDict(plan.image.ref) : null
     if (!output || !dict) continue
     objects[`obj:${plan.image.ref}`] = { stream: { dict: rewrittenDict(dict, output.target), datafile: output.path } }
   }
   const update = { qpdf: [{ jsonversion: 2, pushedinheritedpageresources: false, calledgetallpages: false, maxobjectid: 0 }, objects] }
   session.writeFile('/work/update.json', new TextEncoder().encode(JSON.stringify(update)))
-  const path = `/work/rung-${rung}.pdf`
+  const path = `/work/rung-${tag}.pdf`
   session.runOk([...args, '--update-from-json=/work/update.json', INPUT, path], undefined, 'engine')
   session.remove('/work/update.json')
   return { path, bytes: session.size(path), ms: now() - started }
 }
 
-function imageStats(plans: ImagePlan[], outputs: Map<string, Map<number, StoredOutput>>, rung: number, total: number): ImageStats {
+function imageStats(plans: ImagePlan[], outputs: Map<string, Map<number, StoredOutput>>, choice: (plan: ImagePlan) => number, total: number): ImageStats {
   const stats = emptyStats(total)
   for (const plan of plans) {
-    const output = outputs.get(plan.image.ref)?.get(rung)
+    const output = outputs.get(plan.image.ref)?.get(choice(plan))
     if (!output) continue
     stats.untouched -= 1
     if (output.target.resized) stats.resized += 1

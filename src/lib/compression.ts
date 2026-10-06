@@ -1,4 +1,4 @@
-import type { Attempt, EngineResult, ImageStats } from './engine/engine'
+import type { Attempt, EngineResult, ImageStats, SplitReason, Weight } from './engine/engine'
 import type { SplitPlan } from './engine/split'
 import type { PdfInspection } from './pdf'
 import { estimatedMessageBytes, type TargetProfile } from './profiles'
@@ -22,6 +22,8 @@ export type CompressionReceipt = {
   jpegQuality?: number
   /** True when no image or visible content changed. */
   lossless: boolean
+  /** Drawings whose path coordinates were rounded below what a screen shows, and the bytes that saved. */
+  paths?: { drawings: number; savedBytes: number }
   /** What was verified on the result: 'unchanged' | 'page-count' | 'page-size' | 'structure'. */
   checks: string[]
   attempts: Attempt[]
@@ -37,7 +39,10 @@ export type CompressionOutcome = {
   fits: boolean
   inspection: PdfInspection
   receipt: CompressionReceipt
-  splitReason?: 'quality-floor' | 'browser-cannot-resize'
+  /** Why it cannot fit one email; see `SplitReason`. */
+  splitReason?: SplitReason
+  /** Where the lightest version's bytes are, when it cannot fit. */
+  weight?: Weight
   /** When it doesn't fit: estimated part weights of `candidate`, for choosing where to split it. */
   splitPlan?: SplitPlan
   elapsedMs: number
@@ -47,7 +52,7 @@ function plural(count: number, word: string): string {
   return `${count} ${word}${count === 1 ? '' : 's'}`
 }
 
-export function describeResult(result: Pick<EngineResult, 'kind' | 'images' | 'rung'>): string[] {
+export function describeResult(result: Pick<EngineResult, 'kind' | 'images' | 'rung' | 'paths'>): string[] {
   if (result.kind === 'original') return ['Your original already fits. Nothing was changed.']
   if (result.kind === 'lossless' || (result.kind === 'split-needed' && !result.rung)) {
     return ['Tidied the file’s internal structure only. Every slide and image is unchanged.']
@@ -57,6 +62,7 @@ export function describeResult(result: Pick<EngineResult, 'kind' | 'images' | 'r
   if (resized && result.rung) notes.push(`Resized ${plural(resized, 'image')} for a ${result.rung.longEdgePx}-pixel-wide slide.`)
   if (resaved) notes.push(`Re-saved ${plural(resaved, 'photo')} a little lighter.`)
   if (untouched) notes.push(`${plural(untouched, 'image')} left exactly as they were.`)
+  if (result.paths?.drawings) notes.push('Trimmed drawing coordinates to finer than any screen can show.')
   notes.push('Text, links and slide order are untouched.')
   return notes
 }
@@ -79,11 +85,13 @@ export function toOutcome(result: EngineResult, originalBytes: number, profile: 
       images: result.images,
       longEdgePx: rewroteImages ? result.rung?.longEdgePx : undefined,
       jpegQuality: rewroteImages && result.rung ? Math.round(result.rung.jpegQuality * 100) : undefined,
-      lossless: !rewroteImages,
+      lossless: !rewroteImages && !result.paths,
+      paths: result.paths,
       checks: result.checks,
       attempts: result.attempts,
     },
     splitReason: result.splitReason,
+    weight: result.weight,
     elapsedMs: result.elapsedMs,
   }
 }
