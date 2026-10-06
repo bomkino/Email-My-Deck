@@ -103,10 +103,13 @@ function drawScaled(surfaces: Surface[], width: number, height: number, readBack
  * Optional replacements for the browser's own resizer and encoders (see
  * src/lib/encoders). `writeJpeg` takes interleaved 8-bit samples (1 = gray,
  * 3 = RGB) and a quality on the canvas scale (0–1), and must look at least as
- * good as canvas at it. `resize` scales RGBA pixels to exactly the size asked.
+ * good as canvas at it. When `resize` made the samples, it also gets `today`:
+ * the JPEG the browser alone (its own resize and encoder) would have written
+ * for this output, so it can promise never to cost more. `resize` scales RGBA
+ * pixels to exactly the size asked.
  */
 export type EncoderOverrides = {
-  writeJpeg?: (samples: Uint8Array, width: number, height: number, components: 1 | 3, quality: number) => Promise<Uint8Array>
+  writeJpeg?: (samples: Uint8Array, width: number, height: number, components: 1 | 3, quality: number, today?: Uint8Array) => Promise<Uint8Array>
   deflate?: (data: Uint8Array) => Promise<Uint8Array>
   resize?: (pixels: ImageData, width: number, height: number) => Promise<ImageData>
 }
@@ -129,9 +132,20 @@ async function canvasJpeg(canvas: OffscreenCanvas, output: CodecOutput): Promise
   return { bytes: new Uint8Array(await blob.arrayBuffer()), width: output.width, height: output.height, format: output.format }
 }
 
+/** What the browser codec writes for an output already drawn by canvas. */
+async function browserOnly(canvas: OffscreenCanvas, output: CodecOutput, components: 1 | 3, quality: number): Promise<Uint8Array> {
+  if (components === 3) return (await canvasJpeg(canvas, output)).bytes
+  const rgba = context2d(canvas, true).getImageData(0, 0, output.width, output.height).data
+  const gray = new Uint8Array(output.width * output.height)
+  for (let pixel = 0, offset = 0; pixel < gray.length; pixel += 1, offset += 4) gray[pixel] = rgba[offset]
+  return encodeGrayJpeg(gray, output.width, output.height, quality)
+}
+
 async function render(surfaces: Surface[], output: CodecOutput, overrides: EncoderOverrides, full: () => ImageData): Promise<CodecResult> {
   const viaCanvas = output.format === 'jpeg' && !overrides.writeJpeg
   let pixels: Uint8ClampedArray
+  // The browser's own resize of this output, when another resizer made the pixels.
+  let todayCanvas: OffscreenCanvas | null = null
   if (overrides.resize) {
     const source = full()
     const resized = source.width === output.width && source.height === output.height ? source : await overrides.resize(source, output.width, output.height)
@@ -141,6 +155,7 @@ async function render(surfaces: Surface[], output: CodecOutput, overrides: Encod
       return canvasJpeg(canvas, output)
     }
     pixels = resized.data
+    if (resized !== source && overrides.writeJpeg && (output.format === 'jpeg' || output.format === 'jpeg-gray')) todayCanvas = drawScaled(surfaces, output.width, output.height, output.format === 'jpeg-gray')
   } else {
     const canvas = drawScaled(surfaces, output.width, output.height, !viaCanvas)
     if (viaCanvas) return canvasJpeg(canvas, output)
@@ -161,7 +176,7 @@ async function render(surfaces: Surface[], output: CodecOutput, overrides: Encod
   const quality = output.quality ?? 0.82
   let bytes: Uint8Array
   if (output.format === 'jpeg' || output.format === 'jpeg-gray') {
-    bytes = overrides.writeJpeg ? await overrides.writeJpeg(samples, output.width, output.height, components, quality) : encodeGrayJpeg(samples, output.width, output.height, quality)
+    bytes = overrides.writeJpeg ? await overrides.writeJpeg(samples, output.width, output.height, components, quality, todayCanvas ? await browserOnly(todayCanvas, output, components, quality) : undefined) : encodeGrayJpeg(samples, output.width, output.height, quality)
   } else {
     bytes = await (overrides.deflate ?? deflate)(samples)
   }

@@ -60,7 +60,7 @@ const IMPLAUSIBLE = 15
 export type JpegWriterOptions = {
   /** SSIMULACRA2; without it every JPEG gets the table's distance. */
   score?: Score
-  /** The browser's own JPEG of the same pixels and quality. No JPEG comes out bigger than it. */
+  /** The browser's own JPEG of the same pixels and quality, used when the codec passes no `today` (no resize of ours). No JPEG comes out bigger than it. */
   baseline?: (samples: Uint8Array, width: number, height: number, components: 1 | 3, quality: number) => Promise<Uint8Array>
   /** Decodes a candidate's tiles; the browser's decoder unless a test swaps it. */
   decode?: (bytes: Uint8Array, tiles: Tile[], channels: 1 | 3) => Promise<Uint8Array[]>
@@ -68,19 +68,21 @@ export type JpegWriterOptions = {
 
 /**
  * JPEG writer. Each image gets the lightest jpegli distance that still looks
- * right at its rung (see looks.ts), and never more bytes than the browser's
- * own JPEG of it at the same quality. When the look costs more than that (a
- * busy screenshot, say), it gets the best look that fits in those bytes, or
- * the browser's JPEG itself if that looks better. Without a scorer, or if the
- * check fails, the table's distance, under the same cap.
+ * right at its rung (see looks.ts), and never more bytes than the browser
+ * alone would have written for it (its resize and its encoder, at the same
+ * quality). When the look costs more than that (a busy screenshot, say), it
+ * gets the best look that fits in those bytes, or the browser's JPEG itself if
+ * that looks better. Without a scorer, or if the check fails, the table's
+ * distance, under the same cap.
  */
 export function jpegWriter(jpegli: Jpegli, options: JpegWriterOptions = {}): NonNullable<EncoderOverrides['writeJpeg']> {
   const { score, baseline, decode = decodeTiles } = options
-  return async (samples, width, height, components, quality) => {
+  return async (samples, width, height, components, quality, browser) => {
     const { target, distance } = looksFor(quality)
     const encodeAt = (at: number) => jpegli.encode(samples, width, height, components, jpegliSettingsFor(quality, at))
-    let today: Uint8Array | null = null
-    if (baseline) {
+    // What this image cost before: the codec's own browser-only JPEG when it has one, else the browser's encoder on these samples.
+    let today: Uint8Array | null = browser ?? null
+    if (!today && baseline) {
       try {
         today = await baseline(samples, width, height, components, quality)
       } catch {

@@ -190,6 +190,13 @@ describe('the look check', () => {
     // Without a scorer the table's distance is still held to the cap.
     const small = jpegli.encode(samples, width, height, 3, { distance: 6 })
     expect(await jpegWriter(jpegli, { baseline: async () => small })(samples, width, height, 3, 0.85)).toBe(small)
+    // The codec's own browser-only JPEG, when it passes one, is the cap instead of the baseline.
+    const unused = async (): Promise<Uint8Array> => {
+      throw new Error('should not be asked')
+    }
+    expect(await jpegWriter(jpegli, { baseline: unused })(samples, width, height, 3, 0.85, small)).toBe(small)
+    const fromCodec = await jpegWriter(jpegli, { score: ssimulacra2.score, decode, baseline: unused })(samples, width, height, 3, 0.85, tight)
+    expect(fromCodec.byteLength).toBeLessThanOrEqual(tight.byteLength)
   })
 })
 

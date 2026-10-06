@@ -1,27 +1,30 @@
 // Run the engine on decks with each codec kind and budget in Chromium; one JSON row per run.
 // Usage: node bench/run-decks.mjs <out.jsonl> <codecs,comma> <budgetsMB,comma> <deck.pdf>...
 // BENCH_SAVE=<dir> also writes each compressed deck there, as <deck>-<budget>-<codec>.pdf.
+// BENCH_PORT picks the Vite port (default 5198), so two benches can run at once.
+// Decks are handed to the page by Playwright straight from where they are (any file name works).
 import { createServer } from 'vite'
 import { chromium } from 'playwright-core'
 import { appendFile, mkdir, writeFile } from 'node:fs/promises'
-import { basename, dirname, join } from 'node:path'
+import { basename, join } from 'node:path'
 
 const [outPath, codecList, budgetList, ...decks] = process.argv.slice(2)
-process.env.BENCH_ALLOW = [...new Set([...decks.map((file) => dirname(file)), ...(process.env.BENCH_ALLOW ?? '').split(':').filter(Boolean)])].join(':')
-const server = await createServer({ configFile: new URL('./vite.config.ts', import.meta.url).pathname, server: { port: 5198, strictPort: true }, logLevel: 'warn' })
+const port = Number(process.env.BENCH_PORT || 5198)
+const server = await createServer({ configFile: new URL('./vite.config.ts', import.meta.url).pathname, server: { port, strictPort: true }, logLevel: 'warn' })
 await server.listen()
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--no-sandbox', '--disable-dev-shm-usage'] })
 const page = await browser.newPage()
 page.on('console', (message) => { if (message.type() === 'error') console.error('page:', message.text()) })
 page.on('pageerror', (error) => console.error('pageerror:', error))
-await page.goto('http://localhost:5198/decks/index.html')
+await page.route('**/__deck/*', (route) => route.fulfill({ path: decks[Number(new URL(route.request().url()).pathname.split('/').pop())], contentType: 'application/pdf' }))
+await page.goto(`http://localhost:${port}/decks/index.html`)
 await page.waitForFunction(() => 'deckBench' in globalThis)
 await writeFile(outPath, '')
-for (const deck of decks) {
+for (const [index, deck] of decks.entries()) {
   for (const budgetMB of budgetList.split(',').map(Number)) {
     for (const codec of codecList.split(',')) {
       const save = process.env.BENCH_SAVE
-      const { output, ...row } = await page.evaluate((options) => globalThis.deckBench.run(options), { url: `/@fs${deck}`, budget: Math.round(budgetMB * 1e6), codec, save: Boolean(save) })
+      const { output, ...row } = await page.evaluate((options) => globalThis.deckBench.run(options), { url: `/__deck/${index}`, budget: Math.round(budgetMB * 1e6), codec, save: Boolean(save) })
       if (save && output) {
         await mkdir(save, { recursive: true })
         await writeFile(join(save, `${basename(deck, '.pdf')}-${budgetMB}-${codec}.pdf`), Buffer.from(output, 'base64'))
