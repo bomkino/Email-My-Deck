@@ -118,10 +118,12 @@ export const busyCopy = {
   // The line under the bar changes as the wait gets longer. Each one is true:
   // the device does the work, and the watchdog stops a stalled job and says so.
   waits: [
-    { after: 0, text: 'Nothing gets uploaded. Your device is doing all the lifting itself, so a big deck can take a minute.' },
+    { after: 0, text: 'Nothing gets uploaded. Your device is doing all the lifting itself, so a big deck can take a few minutes.' },
     { after: 25_000, text: 'Still going. Some of these photos are enormous, and your device is handling each one personally.' },
     { after: 75_000, text: 'Still at it. Phones take their time with a deck this size. No rush, and nobody else is looking.' },
     { after: 150_000, text: 'A long one. It’s still working, and if it ever gets stuck, we’ll stop and tell you. Stretch your legs. Your deck can’t.' },
+    { after: 300_000, text: 'Five minutes in, and still working. It’s a lot of deck for one device, and it hasn’t given up. Neither have we.' },
+    { after: 600_000, text: 'Ten minutes. Still moving. If you need this tab back, Cancel is just below, and your original deck hasn’t been touched.' },
   ],
 }
 
@@ -146,6 +148,9 @@ export const commentary: Record<CommentaryKey, string[]> = {
     'Text weighs almost nothing and stays exactly as sharp. It’s the photos that packed three coats.',
     'Every pixel here is headed for a screen, not a billboard. Packing accordingly.',
     'Photos can lose a surprising amount of weight before anyone’s eyes notice. Surprising to the photos, mostly.',
+    'Fewer pixels, same picture. That’s the whole trick, done very carefully.',
+    'Some photos get tried at more than one size, so we can keep the sharpest one that still fits.',
+    'A photo can’t be shrunk until every pixel of it has been read. Your device is doing the reading.',
   ],
   verify: [
     'Counting slides back in. If one’s missing, nobody leaves.',
@@ -159,6 +164,8 @@ export const commentary: Record<CommentaryKey, string[]> = {
   flatten: [
     'Every slide is having its portrait taken. Hold still.',
     'Your text is about to become a picture of text. It won’t notice. Search will.',
+    'Turning a slide into a picture is quick. Turning it into a light picture you can still read is the slow part.',
+    'Small text gets the most care here. It’s the first thing to blur, so it’s the last thing we let go.',
   ],
   any: [
     'Your deck has no idea any of this is happening. Best not to tell it.',
@@ -170,6 +177,10 @@ export const commentary: Record<CommentaryKey, string[]> = {
     'This counts as work. Tell anyone who asks that you’re compressing a deck.',
     'The progress bar is doing its best. It moves when the work does, and fidgets a little in between.',
     'The 25 MB limit was set by someone who never had to email a deck. We think about them often.',
+    'Nobody at the other end will ever know how much work went into making this smaller. We’ll know.',
+    'Taking the long way round on purpose. The short way leaves blurrier slides.',
+    'Somewhere, a deck is being sent as nine attachments called final_v3. Not this one.',
+    'Your deck is getting more careful attention right now than most decks get in the meeting.',
   ],
 }
 
@@ -189,6 +200,8 @@ export const curveBalls: Record<CommentaryKey, string[]> = {
     'Leaving the third coat behind',
     'Sitting on the suitcase',
     'Complimenting the photos',
+    'Trying it on in two sizes',
+    'Folding the big jumper',
   ],
   verify: [
     'Counting heads',
@@ -201,6 +214,7 @@ export const curveBalls: Record<CommentaryKey, string[]> = {
   flatten: [
     'Saying cheese',
     'Laminating the slides',
+    'Framing every slide',
   ],
   any: [
     'Still not uploading anything',
@@ -208,6 +222,8 @@ export const curveBalls: Record<CommentaryKey, string[]> = {
     'Doing the maths twice',
     'Glaring at the 25 MB limit',
     'Whistling casually',
+    'Taking the scenic route',
+    'Weighing the suitcase again',
   ],
 }
 
@@ -367,7 +383,7 @@ export const errorCopy: Record<ErrorKind, { title: string; body: string }> = {
   },
   timeout: {
     title: 'This one’s too heavy for this device.',
-    body: 'It went a whole minute without getting anywhere, so we stopped rather than leave you waiting. Try Chrome or Brave on a laptop, or export the deck with smaller images.',
+    body: 'It went two whole minutes without getting anywhere, so we stopped rather than leave you waiting. Try Chrome or Brave on a laptop, or export the deck with smaller images.',
   },
   password: {
     title: 'This PDF is locked.',

@@ -58,7 +58,9 @@ export function useSmoothProgress(real: number, active: boolean): number {
       setShown((current) => {
         const target = realRef.current
         if (current < target) return Math.min(target, current + Math.max(0.01, (target - current) * 0.25))
-        const ceiling = Math.min(0.97, target + 0.16)
+        // Between real steps the bar fidgets ahead, but less so near the end,
+        // so a slow last stretch doesn't sit at 97%.
+        const ceiling = Math.min(0.97, target + Math.min(0.16, (1 - target) * 0.4))
         return current + Math.max(0, (ceiling - current) * 0.012)
       })
     }, 120)
@@ -141,8 +143,13 @@ export function TipCard({ stage }: { stage: StageKey | null }) {
       cursors.current[key] = at + 1
       return own[key][at]
     }
-    const line = general[generalCursor.current % general.length]
+    let line = general[generalCursor.current % general.length]
     generalCursor.current += 1
+    // On a long wait the general lines come round again. The dog fact doesn't.
+    if (line === dogFact && generalCursor.current > general.length) {
+      line = general[generalCursor.current % general.length]
+      generalCursor.current += 1
+    }
     return line
   }, [own, general])
   const wanted = commentaryKeyFor(stage)
@@ -160,9 +167,12 @@ export function TipCard({ stage }: { stage: StageKey | null }) {
     const timer = window.setTimeout(() => show(wanted), Math.max(900, 2600 - (performance.now() - shownAt.current)))
     return () => window.clearTimeout(timer)
   }, [wanted, shown.key, show])
+  // Lines change every 8 seconds, slowing to 12 after two minutes so a long
+  // wait comes round to the same ones less often.
+  const mountedAt = useRef(performance.now())
   useEffect(() => {
     if (paused) return
-    const timer = window.setTimeout(() => show(shown.key), 8000)
+    const timer = window.setTimeout(() => show(shown.key), performance.now() - mountedAt.current > 120_000 ? 12_000 : 8000)
     return () => window.clearTimeout(timer)
   }, [shown, paused, show])
   const isDogFact = shown.line === dogFact

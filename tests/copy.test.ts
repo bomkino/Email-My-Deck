@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cantFitCopy, mailboxName, stageFor, whatWeDid, type Weights } from '../src/ui/copy'
+import { busyCopy, cantFitCopy, commentary, curveBalls, dogFact, mailboxName, stageFor, waitFor, whatWeDid, type Weights } from '../src/ui/copy'
 
 const MB = 1_000_000
 const weights = (limitMB: number): Weights => ({ deck: 24 * MB, email: 33 * MB, limit: limitMB * MB, budget: 5.5 * MB, mailbox: mailboxName('custom', limitMB * MB), conditional: false })
@@ -31,5 +31,15 @@ describe('page copy', () => {
   it('gives the last sharpening pass its own words', () => {
     expect(stageFor('Using the room left for sharper photos', 'resize')).toBe('sharpen')
     expect(stageFor('Resizing photos to screen size', 'resize')).toBe('resize')
+  })
+
+  it('keeps talking through a long wait, with one dog fact in all', () => {
+    const afters = busyCopy.waits.map((wait) => wait.after)
+    expect(afters).toEqual([...afters].sort((a, b) => a - b))
+    expect(waitFor(0)).toBe(busyCopy.waits[0].text)
+    expect(waitFor(11 * 60_000)).toBe(busyCopy.waits.at(-1)!.text)
+    const lines = [...Object.values(commentary).flat(), ...Object.values(curveBalls).flat(), ...busyCopy.waits.map((wait) => wait.text), dogFact]
+    expect(lines.filter((line) => /\bdogs?\b/i.test(line))).toEqual([dogFact])
+    expect(new Set(lines).size).toBe(lines.length)
   })
 })

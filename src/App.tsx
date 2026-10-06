@@ -19,8 +19,9 @@ type ErrorState = { kind: ErrorKind; detail: string; reason?: string; page?: num
 
 const MAX_BROWSER_BYTES = 200 * 1024 * 1024
 // A job is stopped after this long without any word from the engine. A big
-// deck on a phone can take longer in total, as long as it keeps moving.
-const MAX_STALL_MS = 60_000
+// deck on a slow phone can go quiet for a while and take far longer in total,
+// as long as it keeps moving.
+const MAX_STALL_MS = 120_000
 
 const positive = (value: unknown) => (Number(value) > 0 ? Number(value) : undefined)
 
@@ -174,6 +175,9 @@ export default function App() {
 
   const armWatchdog = useCallback((jobId: number) => {
     clearJobTimeout()
+    // A hidden tab or a sleeping phone pauses the work, so that time doesn't
+    // count. Coming back starts the wait again.
+    if (document.hidden) return
     jobTimeoutRef.current = window.setTimeout(() => {
       if (jobId !== jobIdRef.current) return
       workerRef.current?.terminate()
@@ -259,6 +263,38 @@ export default function App() {
       workerRef.current = null
     }
   }, [workerNonce, stage === 'unsupported', clearJobTimeout, armWatchdog, fail]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // While a job runs: the watchdog sleeps when the tab does, the screen stays
+  // on where the browser allows it, and leaving the page asks first.
+  useEffect(() => {
+    if (!isBusy) return
+    let lock: { release: () => Promise<void> } | null = null
+    let gone = false
+    const keepAwake = async () => {
+      const wakeLock = (navigator as Navigator & { wakeLock?: { request: (type: 'screen') => Promise<{ release: () => Promise<void> }> } }).wakeLock
+      if (!wakeLock || document.hidden || lock) return
+      try {
+        const next = await wakeLock.request('screen')
+        if (gone) void next.release().catch(() => undefined)
+        else { lock = next; (next as unknown as EventTarget).addEventListener?.('release', () => { if (lock === next) lock = null }) }
+      } catch { /* Low battery, a policy, or no permission: the job runs anyway. */ }
+    }
+    const onVisibility = () => {
+      if (document.hidden) clearJobTimeout()
+      else { armWatchdog(jobIdRef.current); void keepAwake() }
+    }
+    const onLeave = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
+    void keepAwake()
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('beforeunload', onLeave)
+    return () => {
+      gone = true
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('beforeunload', onLeave)
+      void lock?.release().catch(() => undefined)
+      lock = null
+    }
+  }, [isBusy, armWatchdog, clearJobTimeout])
 
   const reset = useCallback(() => {
     clearJobTimeout()
