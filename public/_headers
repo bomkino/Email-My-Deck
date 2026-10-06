@@ -9,4 +9,5 @@
   Cross-Origin-Resource-Policy: same-origin
 
 /assets/*
+  ! Cache-Control
   Cache-Control: public, max-age=31536000, immutable

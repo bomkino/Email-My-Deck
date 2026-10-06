@@ -17,7 +17,7 @@ type ErrorState = { kind: ErrorKind; detail: string; reason?: string; page?: num
 const MAX_BROWSER_BYTES = 200 * 1024 * 1024
 // A job is stopped after this long without any word from the engine. A big
 // deck on a phone can take longer in total, as long as it keeps moving.
-const MAX_STALL_MS = 120_000
+const MAX_STALL_MS = 60_000
 
 const positive = (value: unknown) => (Number(value) > 0 ? Number(value) : undefined)
 
@@ -58,7 +58,7 @@ export default function App() {
   const [stage, setStage] = useState<Stage>(() => browserCanRunEngine() ? 'idle' : 'unsupported')
   const [file, setFile] = useState<File | null>(null)
   const [profileId, setProfileId] = useState<TargetProfileId>('common-25')
-  const [customMessageMiB, setCustomMessageMiB] = useState(25)
+  const [customMessageMB, setCustomMessageMB] = useState(25)
   const [progress, setProgress] = useState<Progress>({ label: '', fraction: 0 })
   const [outcome, setOutcome] = useState<CompressionOutcome | null>(null)
   const [parts, setParts] = useState<SplitPart[]>([])
@@ -68,7 +68,7 @@ export default function App() {
   const [workerNonce, setWorkerNonce] = useState(0)
   const [announcement, setAnnouncement] = useState('')
 
-  const profile = useMemo(() => getTargetProfile(profileId, customMessageMiB), [profileId, customMessageMiB])
+  const profile = useMemo(() => getTargetProfile(profileId, customMessageMB), [profileId, customMessageMB])
   const isBusy = stage === 'reading' || stage === 'compressing' || stage === 'splitting'
 
   const clearJobTimeout = useCallback(() => {
@@ -132,7 +132,7 @@ export default function App() {
       if (message.type === 'compress-result') {
         const next = message.outcome as CompressionOutcome
         setOutcome(next)
-        if (next.candidate.bytes.byteLength <= next.targetBytes) {
+        if (next.fits ?? next.candidate.bytes.byteLength <= next.targetBytes) {
           clearJobTimeout()
           setProgress({ label: '', fraction: 1 })
           setStage('ready')
@@ -188,7 +188,7 @@ export default function App() {
     window.setTimeout(() => document.getElementById('emd-drop')?.focus({ preventScroll: true }), 0)
   }, [clearJobTimeout])
 
-  const chooseFile = useCallback((next: File | undefined, requestedProfileId: TargetProfileId = profileId, requestedCustomMessageMiB = customMessageMiB) => {
+  const chooseFile = useCallback((next: File | undefined, requestedProfileId: TargetProfileId = profileId, requestedCustomMessageMB = customMessageMB) => {
     if (!next || stage === 'unsupported') return
     if (!next.name.toLowerCase().endsWith('.pdf') && next.type !== 'application/pdf') {
       fail('Please choose a PDF.', 'not-pdf')
@@ -218,13 +218,13 @@ export default function App() {
         setProgress((current) => ({ ...current, fraction: Math.max(current.fraction, 0.14) }))
         // autoSplit asks engines that support it to split in the same job, so
         // progress stays continuous. Older engines ignore it.
-        worker.postMessage({ type: 'compress', jobId, bytes: new Uint8Array(buffer), profileId: requestedProfileId, customMessageMiB: requestedCustomMessageMiB, autoSplit: true }, [buffer])
+        worker.postMessage({ type: 'compress', jobId, bytes: new Uint8Array(buffer), profileId: requestedProfileId, customMessageMB: requestedCustomMessageMB, autoSplit: true }, [buffer])
       }).catch(() => {
         if (jobId !== jobIdRef.current) return
         fail('The file could not be read in this browser.', 'read')
       })
     }, 0)
-  }, [profileId, customMessageMiB, stage, armWatchdog, fail])
+  }, [profileId, customMessageMB, stage, armWatchdog, fail])
 
   // Drop anywhere on the page. Without this, a near-miss opens the PDF in the
   // tab and the visitor loses the page.
@@ -284,15 +284,15 @@ export default function App() {
         <span className="dropzone-note" id="emd-drop-note" data-pd-type="body.small">{idleCopy.note}</span>
       </button>
       <input ref={inputRef} className="sr-only" type="file" accept="application/pdf,.pdf" tabIndex={-1} aria-hidden="true" onChange={(event) => chooseFile(event.target.files?.[0])} />
-      <MailboxPicker profileId={profileId} customMessageMiB={customMessageMiB} onChange={setProfileId} onCustomChange={setCustomMessageMiB} />
+      <MailboxPicker profileId={profileId} customMessageMB={customMessageMB} onChange={setProfileId} onCustomChange={setCustomMessageMB} />
     </>}
     {isBusy && file && <Busy file={file} stage={stage} progress={progress} headingRef={headingRef} onCancel={reset} />}
     {stage === 'ready' && file && outcome && <Ready
       file={file} outcome={outcome} profileId={profileId} limitBytes={profile.maxMessageBytes} conditional={Boolean(profile.conditional)} headingRef={headingRef}
-      onStricter={() => { setProfileId('strict-20'); chooseFile(file, 'strict-20', customMessageMiB) }}
+      onStricter={() => { setProfileId('strict-20'); chooseFile(file, 'strict-20', customMessageMB) }}
       onReset={reset}
     />}
-    {stage === 'split' && file && <Split file={file} parts={parts} headingRef={headingRef} onReset={reset} />}
+    {stage === 'split' && file && <Split file={file} parts={parts} reason={outcome?.splitReason} headingRef={headingRef} onReset={reset} />}
     {draggingPage && (stage === 'idle' || stage === 'error' || stage === 'ready' || stage === 'split') && <div className="drop-overlay" aria-hidden="true">
       <div className="drop-overlay-card"><DeckStack label="your-deck.pdf" state="hover" /><strong data-pd-type="heading.subsection">{idleCopy.dropAnywhere}</strong><span data-pd-type="body.default">{idleCopy.dropAnywhereNote}</span></div>
     </div>}
@@ -315,7 +315,7 @@ function ErrorNote({ error: { kind, detail, reason, page }, headingRef, onDismis
   </div>
 }
 
-function MailboxPicker({ profileId, customMessageMiB, onChange, onCustomChange }: { profileId: TargetProfileId; customMessageMiB: number; onChange: (value: TargetProfileId) => void; onCustomChange: (value: number) => void }) {
+function MailboxPicker({ profileId, customMessageMB, onChange, onCustomChange }: { profileId: TargetProfileId; customMessageMB: number; onChange: (value: TargetProfileId) => void; onCustomChange: (value: number) => void }) {
   const [open, setOpen] = useState(false)
   const ids: TargetProfileId[] = ['common-25', 'strict-20', 'gmail-advanced', 'custom']
   const budget = (id: TargetProfileId) => id === 'custom' ? '' : `about ${formatSize(TARGET_PROFILES[id].recommendedRawBytes)}`
@@ -323,7 +323,7 @@ function MailboxPicker({ profileId, customMessageMiB, onChange, onCustomChange }
   return <div className={`mailbox ${open ? 'mailbox--open' : ''}`}>
     <div className="mailbox-summary">
       <span data-pd-type="metadata">Sending to</span>
-      <strong data-pd-type="label">{profileId === 'custom' ? `A ${customMessageMiB} MB limit` : current.label}</strong>
+      <strong data-pd-type="label">{profileId === 'custom' ? `A ${customMessageMB} MB limit` : current.label}</strong>
       <button className="text-button" type="button" aria-expanded={open} aria-controls="emd-mailbox" onClick={() => setOpen(!open)}>{open ? 'Done' : 'Change'}</button>
     </div>
     {open && <fieldset className="mailbox-options" id="emd-mailbox">
@@ -336,7 +336,7 @@ function MailboxPicker({ profileId, customMessageMiB, onChange, onCustomChange }
           <strong data-pd-type="label">{mailboxCopy[id].label}{mailboxCopy[id].badge && <em className="badge">{mailboxCopy[id].badge}</em>}</strong>
           <small data-pd-type="body.small">{mailboxCopy[id].detail(budget(id))}</small>
           {id === 'custom' && profileId === 'custom' && <span className="custom-input">
-            <input aria-label="Your mail system's message limit, in MB" type="number" inputMode="decimal" min="5" max="70" defaultValue={customMessageMiB}
+            <input aria-label="Your mail system's message limit, in MB" type="number" inputMode="decimal" min="5" max="70" defaultValue={customMessageMB}
               onChange={(event) => { const parsed = Number(event.target.value); if (event.target.value !== '' && Number.isFinite(parsed)) onCustomChange(Math.min(70, Math.max(5, parsed))) }}
               onBlur={(event) => { const parsed = Number(event.target.value); const next = Math.min(70, Math.max(5, Number.isFinite(parsed) && parsed > 0 ? parsed : 5)); event.currentTarget.value = String(next); onCustomChange(next) }} />
             <span data-pd-type="metadata">MB</span>
@@ -378,7 +378,7 @@ function Ready({ file, outcome, profileId, limitBytes, conditional, headingRef, 
   const outputBytes = outcome.candidate.bytes.byteLength
   const outputName = emailVersionName(file.name)
   const lighter = percentLighter(file.size, outputBytes)
-  const did = whatWeDid[untouched ? 'original' : `${outcome.candidate.engine}:${outcome.candidate.quality}`] ?? outcome.candidate.notes.join(' ')
+  const did = untouched ? [] : whatWeDid(outcome)
   const save = () => { download(outcome.candidate.bytes, outputName); setDownloaded(true) }
   return <section className="panel panel--ready" aria-labelledby="emd-ready-title">
     <div className="ready-top">
@@ -397,7 +397,7 @@ function Ready({ file, outcome, profileId, limitBytes, conditional, headingRef, 
           {lighter > 0 && <span className="chip" data-pd-type="metadata">{lighter}% lighter</span>}
         </div>
         <ul className="receipt-list" data-pd-type="body.default">
-          <li><Icon name="check" size={16} />{did}</li>
+          {did.map((line) => <li key={line}><Icon name="check" size={16} />{line}</li>)}
           <li><Icon name="check" size={16} />{readyCopy.sameSlides(outcome.inspection.pages)}</li>
         </ul>
       </div>}
@@ -415,7 +415,7 @@ function Ready({ file, outcome, profileId, limitBytes, conditional, headingRef, 
   </section>
 }
 
-function Split({ file, parts, headingRef, onReset }: { file: File; parts: SplitPart[]; headingRef: HeadingRef; onReset: () => void }) {
+function Split({ file, parts, reason, headingRef, onReset }: { file: File; parts: SplitPart[]; reason?: string; headingRef: HeadingRef; onReset: () => void }) {
   const [copied, setCopied] = useState<'idle' | 'done' | 'failed'>('idle')
   const name = deckName(file.name)
   const plan = parts.map((part, index) => `Email ${index + 1} of ${parts.length}\nSubject: ${splitCopy.subject(name, index + 1, parts.length)}\nAttach: ${part.name}\n\n${splitCopy.emailBody(name, index + 1, parts.length, part.startPage, part.endPage)}`).join('\n—\n\n')
@@ -423,7 +423,7 @@ function Split({ file, parts, headingRef, onReset }: { file: File; parts: SplitP
   return <section className="panel panel--split" aria-labelledby="emd-split-title">
     <p className="eyebrow" data-pd-type="metadata">{splitCopy.eyebrow}</p>
     <h2 id="emd-split-title" ref={headingRef} tabIndex={-1} data-pd-type="heading.subsection">{splitCopy.title(parts.length)}</h2>
-    <p className="ready-lede" data-pd-type="body.default">{splitCopy.body(parts.length)}</p>
+    <p className="ready-lede" data-pd-type="body.default">{splitCopy.body(parts.length, reason)}</p>
     <ol className="parts">
       {parts.map((part, index) => <li className="part" key={part.name}>
         <span className="part-number" data-pd-type="data">{String(index + 1).padStart(2, '0')}</span>

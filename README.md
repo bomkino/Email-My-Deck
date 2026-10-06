@@ -69,7 +69,7 @@ Copy `dist-pitchdog/` to `apps/main-site/email-my-deck/` in `bomkino/pitchdog-cl
 - The worker reports progress as `{ stage, fraction, label, page?, pages? }`; `fraction` never goes backwards. Errors carry a `code` (`not-pdf`, `damaged`, `password`, `restricted`, `protected` with a `reason`, `too-big`, `page-too-large`, `engine`).
 - `node scripts/engine-check.mjs` (after `npm run build` and `npm run corpus`) runs the built engine in Chromium on the synthetic corpus, served with the site's own `_headers` by `scripts/serve-dist.mjs`, and checks each deck's result, the progress events and that nothing leaves the origin. CI runs it and `npm run smoke` against the built site on every pull request.
 
-The compression engine never receives user-controlled command-line arguments. A browser-job watchdog stops any job that goes 120 seconds without a progress event, so a pathological file never leaves the interface spinning forever while a big deck that keeps moving is never cut off. Large engine assets are bundled and self-hostable. The Ghostscript WebAssembly distribution is AGPL-3.0-or-later; see [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) and [PROVENANCE.md](PROVENANCE.md) before redistribution.
+The compression engine never receives user-controlled command-line arguments. A browser-job watchdog stops any job that goes 60 seconds without a progress event, so a pathological file never leaves the interface spinning forever while a big deck that keeps moving is never cut off. Large engine assets are bundled and self-hostable; see [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) and [PROVENANCE.md](PROVENANCE.md) before redistribution.
 
 ## Cloudflare Pages
 

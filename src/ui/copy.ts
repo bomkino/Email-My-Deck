@@ -152,17 +152,31 @@ export const readyCopy = {
   farewell: 'Go well, little deck.',
 }
 
-export const whatWeDid: Record<string, string> = {
-  original: 'Nothing. It was already small enough.',
-  'qpdf:preserved': 'Tidied the file’s insides. Nothing you can see changed.',
-  'qpdf:optimized': 'Re-saved the photos a little lighter. Text stayed text.',
-  'ghostscript:strong': 'Shrank oversized photos to screen size. Text stayed text.',
+const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+
+type ReceiptLike = {
+  candidate: { notes: string[] }
+  receipt?: { lossless: boolean; longEdgePx?: number; images: { resized: number; resaved: number } }
+}
+
+// The ready screen's "what we did" lines, from what the engine measured.
+export function whatWeDid({ candidate, receipt }: ReceiptLike): string[] {
+  if (!receipt) return candidate.notes
+  if (receipt.lossless) return ['Tidied the file’s insides. Nothing you can see changed.']
+  const { resized, resaved } = receipt.images
+  const lines: string[] = []
+  if (resized && receipt.longEdgePx) lines.push(`Shrank ${count(resized, 'photo', 'photos')} that were bigger than they needed to be, to ${receipt.longEdgePx.toLocaleString('en')} pixels across the slide.`)
+  if (resaved) lines.push(`Re-saved ${count(resaved, 'photo', 'photos')} a little lighter.`)
+  lines.push('Text, fonts and links weren’t touched.')
+  return lines
 }
 
 export const splitCopy = {
   eyebrow: 'Split, not smudged',
   title: (count: number) => `This one goes in ${count} emails.`,
-  body: (count: number) => `Squeezing it into one file would have made your slides blurry, so we split it instead. ${count === 2 ? 'Both parts stay' : `All ${count} parts stay`} sharp, and each one fits the limit you picked.`,
+  body: (count: number, reason?: string) => `${reason === 'browser-cannot-resize'
+    ? 'This browser can’t resize photos, so we split the deck rather than squash it. Chrome or Brave on a laptop may fit it in one.'
+    : 'Squeezing it into one file would have made your slides blurry, so we split it instead.'} ${count === 2 ? 'Both parts stay' : `All ${count} parts stay`} sharp, and each one fits the limit you picked.`,
   downloadAll: (count: number) => `Download all ${count}`,
   download: 'Download',
   planTitle: 'Your email plan',
@@ -175,12 +189,16 @@ export const splitCopy = {
     `Hi,\n\nI’m sending ${deck} in ${total} parts so every slide stays sharp. This is part ${index} of ${total} (${start === end ? `page ${start}` : `pages ${start}–${end}`}).\n\n`,
 }
 
-export type ErrorKind = 'not-pdf' | 'too-big' | 'timeout' | 'password' | 'restricted' | 'protected' | 'page-too-large' | 'engine' | 'read' | 'unknown'
+export type ErrorKind = 'not-pdf' | 'damaged' | 'too-big' | 'timeout' | 'password' | 'restricted' | 'protected' | 'page-too-large' | 'engine' | 'read' | 'unknown'
 
 export const errorCopy: Record<ErrorKind, { title: string; body: string }> = {
   'not-pdf': {
     title: 'That’s not a PDF.',
     body: 'Export your deck as a PDF first. In most apps it’s under File, then Export or Download. Then drop it here.',
+  },
+  damaged: {
+    title: 'This PDF is a little broken.',
+    body: 'We couldn’t read it safely, so we stopped before changing anything. Export a fresh copy from your presentation app and drop that in.',
   },
   'too-big': {
     title: 'That’s a lot of deck.',
@@ -188,7 +206,7 @@ export const errorCopy: Record<ErrorKind, { title: string; body: string }> = {
   },
   timeout: {
     title: 'This one’s too heavy for this device.',
-    body: 'It went two minutes without getting anywhere, so we stopped rather than leave you waiting. Try Chrome or Brave on a laptop, or export the deck with smaller images.',
+    body: 'It went a whole minute without getting anywhere, so we stopped rather than leave you waiting. Try Chrome or Brave on a laptop, or export the deck with smaller images.',
   },
   password: {
     title: 'This PDF is locked.',
