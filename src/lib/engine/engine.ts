@@ -40,7 +40,7 @@ export function splitReasonFor(weight: Weight, budget: number): Exclude<SplitRea
 }
 
 export type Attempt = {
-  step: 'original' | 'lossless' | Rung['id']
+  step: 'original' | 'lossless' | 'flatten' | Rung['id']
   bytes: number
   fits: boolean
   ms: number
@@ -50,8 +50,11 @@ export type Attempt = {
 }
 
 export type EngineResult = {
-  /** original: untouched; lossless: structure only; images: images rewritten; split-needed: nothing fits, `bytes` is the version to split. */
-  kind: 'original' | 'lossless' | 'images' | 'split-needed'
+  /**
+   * original: untouched; lossless: structure only; images: images rewritten; split-needed: nothing fits, `bytes` is the version to split;
+   * flattened: every page turned into one picture (only when asked for, see `flatten.ts`).
+   */
+  kind: 'original' | 'lossless' | 'images' | 'split-needed' | 'flattened'
   bytes: Uint8Array
   rung: Rung | null
   pageCount: number
@@ -65,6 +68,8 @@ export type EngineResult = {
   weight?: Weight
   /** Drawings (page content and forms) whose path coordinates were rounded below what a screen shows, and the bytes that saved. */
   paths?: { drawings: number; savedBytes: number }
+  /** For `flattened`: slides turned into pictures, the fewest pixels across any slide kept and its JPEG quality (1–100), and the lowest clarity (0–1) any slide kept. */
+  flatten?: { pages: number; longEdgePx: number; jpegQuality: number; clarity: number }
   elapsedMs: number
   /** Session holding `bytes` at `path`, so an automatic split can reuse it. */
   session?: QpdfSession

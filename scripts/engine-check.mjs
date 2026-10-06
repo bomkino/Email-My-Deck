@@ -19,6 +19,9 @@ const cases = [
   { deck: 'design-tool-deck.pdf', profile: 'common-25', expect: 'fits' },
   { deck: 'email-pressure-test.pdf', profile: 'strict-20', autoSplit: true, expect: 'split' },
   { deck: 'email-pressure-test.pdf', profile: 'strict-20', autoSplit: false, expect: 'needs-split' },
+  // The nuke: every page becomes one picture.
+  { deck: 'email-pressure-test.pdf', profile: 'strict-20', mode: 'flatten', expect: 'flattened' },
+  { deck: 'design-tool-deck.pdf', profile: 'strict-20', mode: 'flatten', expect: 'flattened' },
   { deck: 'forms-deck.pdf', profile: 'common-25', expect: 'error:protected:forms' },
   { deck: 'restricted-deck.pdf', profile: 'common-25', expect: 'error:restricted' },
 ]
@@ -45,7 +48,7 @@ for (const testCase of cases) {
   page.on('pageerror', (error) => problems.push(`page error: ${error.message}`))
   page.on('console', (message) => { if (message.type() === 'error') problems.push(`console: ${message.text()}`) })
   await page.goto(`${origin}/__engine-check.html`, { waitUntil: 'load' })
-  const run = await page.evaluate(async ({ workerUrl, deck, profile, autoSplit }) => {
+  const run = await page.evaluate(async ({ workerUrl, deck, profile, autoSplit, mode }) => {
     const bytes = new Uint8Array(await (await fetch(`/__corpus/${deck}`)).arrayBuffer())
     const size = bytes.byteLength
     const worker = new Worker(workerUrl, { type: 'module' })
@@ -69,15 +72,15 @@ for (const testCase of cases) {
           ms,
           progress,
           type: data.type,
-          outcome: outcome && { engine: outcome.candidate.engine, bytes: outcome.candidate.bytes.byteLength, fits: outcome.fits, targetBytes: outcome.targetBytes, pages: outcome.inspection.pages, verified: outcome.verified, receipt: outcome.receipt, planPages: outcome.splitPlan?.pageBytes?.length },
+          outcome: outcome && { engine: outcome.candidate.engine, notes: outcome.candidate.notes, bytes: outcome.candidate.bytes.byteLength, fits: outcome.fits, targetBytes: outcome.targetBytes, pages: outcome.inspection.pages, verified: outcome.verified, receipt: outcome.receipt, planPages: outcome.splitPlan?.pageBytes?.length },
           parts: data.parts?.map((part) => ({ bytes: part.bytes.byteLength, startPage: part.startPage, endPage: part.endPage, pages: part.pages })),
         })
       }
-      worker.postMessage({ type: 'compress', jobId: 1, bytes, profileId: profile, autoSplit }, [bytes.buffer])
+      worker.postMessage({ type: 'compress', jobId: 1, bytes, profileId: profile, autoSplit, mode }, [bytes.buffer])
     })
   }, { workerUrl: `/assets/${workerName}`, ...testCase })
 
-  const label = `${testCase.deck} (${testCase.profile}${testCase.autoSplit ? ', auto split' : ''})`
+  const label = `${testCase.deck} (${testCase.profile}${testCase.autoSplit ? ', auto split' : ''}${testCase.mode ? `, ${testCase.mode}` : ''})`
   const fail = (reason) => failures.push(`${label}: ${reason}`)
   const budget = BUDGET[testCase.profile]
   const offOrigin = requests.filter((url) => !url.startsWith(origin) && !url.startsWith('blob:') && !url.startsWith('data:'))
@@ -87,7 +90,7 @@ for (const testCase of cases) {
   const fractions = run.progress.map((event) => event.fraction)
   if (fractions.some((value, index) => index > 0 && value < fractions[index - 1])) fail('progress went backwards')
   if (fractions.some((value) => !(value >= 0 && value <= 1))) fail('progress outside 0..1')
-  if (run.progress.some((event) => !['inspect', 'tidy', 'photos', 'resize', 'verify', 'split'].includes(event.stage))) fail('unknown progress stage')
+  if (run.progress.some((event) => !['inspect', 'tidy', 'photos', 'resize', 'verify', 'split', 'flatten'].includes(event.stage))) fail('unknown progress stage')
 
   const [kind, ...detail] = testCase.expect.split(':')
   if (kind === 'error') {
@@ -103,6 +106,15 @@ for (const testCase of cases) {
       if (!outcome?.verified || outcome.receipt.checks.join() !== 'page-count,page-size,structure') fail('result was not verified')
       if (!requests.some((url) => /image\.worker-.*\.js$/.test(url))) fail('the image worker pool was not used')
     }
+    if (kind === 'flattened') {
+      if (run.type !== 'compress-result' || outcome?.engine !== 'flattened') fail(`expected a flattened result, got ${run.type} ${outcome?.engine}`)
+      if (!outcome?.fits || outcome.bytes > budget) fail(`expected the flattened deck within ${budget} bytes, got ${outcome?.bytes}`)
+      if (!outcome?.verified || outcome.receipt.checks.join() !== 'page-count,page-size,structure') fail('result was not verified')
+      if (outcome?.receipt?.flatten?.pages !== outcome?.pages) fail('not every page was flattened')
+      if (!run.progress.some((event) => event.stage === 'flatten')) fail('no flatten progress')
+      if (!requests.some((url) => /pdf\.worker\.min-.*\.mjs$/.test(url))) fail('PDF.js did not run on its own worker')
+      if (!requests.some((url) => /flatpage\.worker-.*\.js$/.test(url))) fail('slides were not re-saved on the flatten workers')
+    }
     if (kind === 'needs-split' && (run.type !== 'compress-result' || outcome?.fits !== false)) fail('expected a compress result that still needs a split')
     if (kind === 'needs-split' && outcome?.planPages !== outcome?.pages) fail('expected a split plan with a weight for every page')
     if (kind === 'split') {
@@ -117,7 +129,7 @@ for (const testCase of cases) {
       if (next - 1 !== outcome?.pages) fail('parts do not cover every page')
     }
   }
-  const result = run.error ? `${run.error.code}${run.error.reason ? `:${run.error.reason}` : ''}` : run.parts ? `${run.parts.length} parts` : `${((run.outcome?.bytes ?? 0) / MB).toFixed(2)} MB${run.outcome?.receipt?.longEdgePx ? ` at ${run.outcome.receipt.longEdgePx} px` : ''}`
+  const result = run.error ? `${run.error.code}${run.error.reason ? `:${run.error.reason}` : ''}` : run.parts ? `${run.parts.length} parts` : `${((run.outcome?.bytes ?? 0) / MB).toFixed(2)} MB${run.outcome?.receipt?.longEdgePx ? ` at ${run.outcome.receipt.flatten ? 'least ' : ''}${run.outcome.receipt.longEdgePx} px` : ''}`
   console.log(`${label}: ${(run.size / MB).toFixed(1)} MB → ${result} in ${((run.ms ?? 0) / 1000).toFixed(1)} s, ${run.progress.length} progress events`)
   await page.close()
 }

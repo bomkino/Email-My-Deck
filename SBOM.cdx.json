@@ -11,6 +11,7 @@
   },
   "components": [
     { "type": "library", "name": "@neslinesli93/qpdf-wasm", "version": "0.3.0", "purl": "pkg:npm/%40neslinesli93/qpdf-wasm@0.3.0", "licenses": [{ "license": { "id": "ISC" } }] },
+    { "type": "library", "name": "pdfjs-dist", "version": "6.4.299", "purl": "pkg:npm/pdfjs-dist@6.4.299", "licenses": [{ "license": { "id": "Apache-2.0" } }], "description": "Loaded only for flatten; ships its standard fonts, CMaps and OpenJPEG/JBIG2 WASM decoders as separate assets" },
     { "type": "library", "name": "react", "version": "19.3.0", "purl": "pkg:npm/react@19.3.0", "licenses": [{ "license": { "id": "MIT" } }] },
     { "type": "library", "name": "react-dom", "version": "19.3.0", "purl": "pkg:npm/react-dom@19.3.0", "licenses": [{ "license": { "id": "MIT" } }] }
   ]
