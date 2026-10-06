@@ -11,14 +11,17 @@ import { serveDist } from './serve-dist.mjs'
 const MB = 1_000_000
 const MIB = 1024 * 1024
 const BUDGET = { 'common-25': 17 * MIB, 'strict-20': 13.5 * MIB }
+// Same formula as getTargetProfile('custom'): the message limit less the body reserve, over base64's growth.
+const customBudget = (messageMB) => Math.floor((messageMB * MB - 512 * 1024) / 1.3684)
 
 const cases = [
   { deck: 'vector-deck.pdf', profile: 'common-25', expect: 'original' },
   { deck: 'photo-deck.pdf', profile: 'strict-20', expect: 'fits' },
   { deck: 'shared-resources-deck.pdf', profile: 'strict-20', expect: 'fits' },
   { deck: 'design-tool-deck.pdf', profile: 'common-25', expect: 'fits' },
-  { deck: 'email-pressure-test.pdf', profile: 'strict-20', autoSplit: true, expect: 'split' },
-  { deck: 'email-pressure-test.pdf', profile: 'strict-20', autoSplit: false, expect: 'needs-split' },
+  // The best encoders fit this deck under strict-20 at the smallest size, so a tighter limit forces the split.
+  { deck: 'email-pressure-test.pdf', profile: 'custom', customMB: 15, autoSplit: true, expect: 'split' },
+  { deck: 'email-pressure-test.pdf', profile: 'custom', customMB: 15, autoSplit: false, expect: 'needs-split' },
   // The nuke: every page becomes one picture.
   { deck: 'email-pressure-test.pdf', profile: 'strict-20', mode: 'flatten', expect: 'flattened' },
   { deck: 'design-tool-deck.pdf', profile: 'strict-20', mode: 'flatten', expect: 'flattened' },
@@ -48,7 +51,7 @@ for (const testCase of cases) {
   page.on('pageerror', (error) => problems.push(`page error: ${error.message}`))
   page.on('console', (message) => { if (message.type() === 'error') problems.push(`console: ${message.text()}`) })
   await page.goto(`${origin}/__engine-check.html`, { waitUntil: 'load' })
-  const run = await page.evaluate(async ({ workerUrl, deck, profile, autoSplit, mode }) => {
+  const run = await page.evaluate(async ({ workerUrl, deck, profile, customMB, autoSplit, mode }) => {
     const bytes = new Uint8Array(await (await fetch(`/__corpus/${deck}`)).arrayBuffer())
     const size = bytes.byteLength
     const worker = new Worker(workerUrl, { type: 'module' })
@@ -76,13 +79,13 @@ for (const testCase of cases) {
           parts: data.parts?.map((part) => ({ bytes: part.bytes.byteLength, startPage: part.startPage, endPage: part.endPage, pages: part.pages })),
         })
       }
-      worker.postMessage({ type: 'compress', jobId: 1, bytes, profileId: profile, autoSplit, mode }, [bytes.buffer])
+      worker.postMessage({ type: 'compress', jobId: 1, bytes, profileId: profile, customMessageMB: customMB, autoSplit, mode }, [bytes.buffer])
     })
   }, { workerUrl: `/assets/${workerName}`, ...testCase })
 
-  const label = `${testCase.deck} (${testCase.profile}${testCase.autoSplit ? ', auto split' : ''}${testCase.mode ? `, ${testCase.mode}` : ''})`
+  const label = `${testCase.deck} (${testCase.profile}${testCase.customMB ? ` ${testCase.customMB} MB` : ''}${testCase.autoSplit ? ', auto split' : ''}${testCase.mode ? `, ${testCase.mode}` : ''})`
   const fail = (reason) => failures.push(`${label}: ${reason}`)
-  const budget = BUDGET[testCase.profile]
+  const budget = testCase.profile === 'custom' ? customBudget(testCase.customMB) : BUDGET[testCase.profile]
   const offOrigin = requests.filter((url) => !url.startsWith(origin) && !url.startsWith('blob:') && !url.startsWith('data:'))
   if (offOrigin.length) fail(`requests left the origin: ${offOrigin.join(', ')}`)
   if (run.timeout) fail('no answer within 120 s')
