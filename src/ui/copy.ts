@@ -294,7 +294,7 @@ export const cantFitCopy = {
   ways: (count: number) => `${count === 3 ? 'Three' : 'Two'} ways to send it anyway:`,
   linkTitle: 'Send one link',
   linkBadge: 'Our pick',
-  linkBody: 'Your whole deck, full quality, in one piece. Put it on a free file-sharing service and email the link instead of the file.',
+  linkBody: 'Your whole deck, full quality, in one piece. Put it on Google Drive or another free service, and email the link instead of the file.',
   linkMore: 'How to send it by link, for free',
   partsTitle: (count: number) => `Split it into ${count} emails`,
   partsBody: 'Every slide stays sharp, and every link still works. The catch: your recipient gets more than one email and has to open them in order.',

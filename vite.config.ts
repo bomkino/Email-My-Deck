@@ -1,5 +1,6 @@
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
+import { renderSendGuide } from './src/guide/render.ts'
 
 declare const process: { env: Record<string, string | undefined> }
 
@@ -8,9 +9,23 @@ declare const process: { env: Record<string, string | undefined> }
 const base = process.env.EMD_BASE || '/'
 const commit = process.env.EMD_SOURCE_COMMIT || ''
 
+// The "Send a link instead" guide is written into the HTML at build time, so
+// it reads fine without JavaScript. Its facts live in src/guide/services.ts;
+// restart the dev server after changing them.
+const GUIDE_MARK = '<!-- send-a-link guide: rendered from src/guide/services.ts -->'
+function sendGuide(): Plugin {
+  return {
+    name: 'emd-send-guide',
+    transformIndexHtml(html) {
+      if (!html.includes(GUIDE_MARK)) throw new Error('index.html lost the send-a-link guide marker.')
+      return html.replace(GUIDE_MARK, renderSendGuide())
+    },
+  }
+}
+
 export default defineConfig({
   base,
-  plugins: [react()],
+  plugins: [react(), sendGuide()],
   define: {
     __EMD_SOURCE_URL__: JSON.stringify(commit ? `https://github.com/bomkino/Email-My-Deck/tree/${commit}` : ''),
   },
