@@ -15,6 +15,9 @@ export default defineConfig({
     __EMD_SOURCE_URL__: JSON.stringify(commit ? `https://github.com/bomkino/Email-My-Deck/tree/${commit}` : ''),
   },
   optimizeDeps: {
+    // Pre-bundle the worker's dependencies when the dev server starts. Found
+    // later, they make Vite reload the page in the middle of the first job.
+    include: ['pdf-lib', '@neslinesli93/qpdf-wasm'],
     exclude: ['@wasm-zoo/ghostscript'],
   },
   worker: { format: 'es' },

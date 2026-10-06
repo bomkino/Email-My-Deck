@@ -263,8 +263,8 @@ body.mobile-menu-open { overflow: hidden; }
 .part-info { min-width: 0; display: grid; gap: 4px; }
 .part-info strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .part-info span { color: var(--muted); }
-/* Truncated names need room for descenders. */
-.busy-file-name, .file-name, .part-info strong { line-height: 1.4; }
+/* Truncated names need room for descenders, so they skip the type system's text-box trim. */
+.busy-file-name, .file-name, .part-info strong { line-height: 1.4; text-box-trim: none; }
 .plan { padding: 16px; display: grid; gap: 10px; border: 1px solid var(--rule); background: var(--paper); }
 .plan-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .plan p { color: var(--muted); }

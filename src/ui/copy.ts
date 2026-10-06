@@ -159,7 +159,7 @@ export const errorCopy: Record<ErrorKind, { title: string; body: string }> = {
   },
   timeout: {
     title: 'This one’s too heavy for this device.',
-    body: 'It ran past two minutes, so we stopped rather than leave you waiting. Try Chrome or Brave on a laptop, or export the deck with smaller images.',
+    body: 'It went two minutes without getting anywhere, so we stopped rather than leave you waiting. Try Chrome or Brave on a laptop, or export the deck with smaller images.',
   },
   password: {
     title: 'This PDF is locked.',
@@ -190,6 +190,16 @@ export const errorCopy: Record<ErrorKind, { title: string; body: string }> = {
     body: 'Your original is untouched and still on your device.',
   },
 }
+
+// When the engine says what kind of protection it found.
+export const protectedCopy: Record<string, string> = {
+  forms: 'It has form fields, and rewriting the file could quietly break them. Export a flattened copy and try again.',
+  signature: 'It carries a digital signature, and any change to the file would break it. Send the signed original as it is, or export an unsigned copy.',
+  attachments: 'It has other files tucked inside it, and rewriting it could lose them. Export a copy without attachments and try again.',
+  javascript: 'It has scripts inside it, and we don’t rewrite those. Export a plain copy and try again.',
+}
+
+export const pageTooLargeTitle = (page: number) => `Slide ${page} is too heavy on its own.`
 
 export function errorKindFor(message: string, code?: unknown): ErrorKind {
   if (typeof code === 'string' && code in errorCopy) return code as ErrorKind

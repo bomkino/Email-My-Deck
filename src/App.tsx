@@ -3,18 +3,23 @@ import type { CompressionOutcome } from './lib/compression'
 import { emailVersionName } from './lib/filename'
 import { getTargetProfile, TARGET_PROFILES, type TargetProfileId } from './lib/profiles'
 import {
-  busyCopy, errorCopy, errorKindFor, idleCopy, mailboxCopy, mailboxWhy, readyCopy, splitCopy, stageCopy, stageFor,
-  unsupportedCopy, whatWeDid, type ErrorKind,
+  busyCopy, errorCopy, errorKindFor, idleCopy, mailboxCopy, mailboxWhy, pageTooLargeTitle, protectedCopy, readyCopy, splitCopy,
+  stageCopy, stageFor, unsupportedCopy, whatWeDid, type ErrorKind,
 } from './ui/copy'
 import { deckName, formatElapsed, formatSize, percentLighter } from './ui/format'
 import { DeckStack, Icon, Meter, Stamp, TipCard, useElapsed, useSmoothProgress } from './ui/pieces'
 
 type Stage = 'idle' | 'reading' | 'compressing' | 'splitting' | 'ready' | 'split' | 'error' | 'unsupported'
 type SplitPart = { bytes: Uint8Array; name: string; startPage: number; endPage: number }
-type Progress = { label: string; fraction: number; stage?: unknown }
+type Progress = { label: string; fraction: number; stage?: unknown; page?: number; pages?: number }
+type ErrorState = { kind: ErrorKind; detail: string; reason?: string; page?: number }
 
 const MAX_BROWSER_BYTES = 200 * 1024 * 1024
-const MAX_JOB_MS = 120_000
+// A job is stopped after this long without any word from the engine. A big
+// deck on a phone can take longer in total, as long as it keeps moving.
+const MAX_STALL_MS = 120_000
+
+const positive = (value: unknown) => (Number(value) > 0 ? Number(value) : undefined)
 
 function browserCanRunEngine(): boolean {
   return typeof WebAssembly === 'object' && typeof Worker === 'function' && typeof Blob !== 'undefined' && typeof Blob.prototype.arrayBuffer === 'function' && typeof URL.createObjectURL === 'function'
@@ -57,7 +62,7 @@ export default function App() {
   const [progress, setProgress] = useState<Progress>({ label: '', fraction: 0 })
   const [outcome, setOutcome] = useState<CompressionOutcome | null>(null)
   const [parts, setParts] = useState<SplitPart[]>([])
-  const [error, setError] = useState<{ kind: ErrorKind; detail: string } | null>(null)
+  const [error, setError] = useState<ErrorState | null>(null)
   const [hoveringZone, setHoveringZone] = useState(false)
   const [draggingPage, setDraggingPage] = useState(false)
   const [workerNonce, setWorkerNonce] = useState(0)
@@ -73,11 +78,22 @@ export default function App() {
     }
   }, [])
 
-  const fail = useCallback((message: string, code?: unknown) => {
+  const fail = useCallback((message: string, code?: unknown, extra: { reason?: unknown; page?: unknown } = {}) => {
     clearJobTimeout()
-    setError({ kind: errorKindFor(message, code), detail: message })
+    setError({ kind: errorKindFor(message, code), detail: message, reason: typeof extra.reason === 'string' ? extra.reason : undefined, page: positive(extra.page) })
     setStage('error')
   }, [clearJobTimeout])
+
+  const armWatchdog = useCallback((jobId: number) => {
+    clearJobTimeout()
+    jobTimeoutRef.current = window.setTimeout(() => {
+      if (jobId !== jobIdRef.current) return
+      workerRef.current?.terminate()
+      workerRef.current = null
+      setWorkerNonce((nonce) => nonce + 1)
+      fail('This file took too long.', 'timeout')
+    }, MAX_STALL_MS)
+  }, [clearJobTimeout, fail])
 
   // Move focus to the new state's heading, and say it out loud once.
   useEffect(() => {
@@ -105,9 +121,12 @@ export default function App() {
     }
     worker.onmessage = (event: MessageEvent<Record<string, unknown>>) => {
       const message = event.data
-      if (Number(message.jobId) !== jobIdRef.current) return
+      const jobId = Number(message.jobId)
+      if (jobId !== jobIdRef.current) return
       if (message.type === 'progress') {
-        setProgress({ label: String(message.label ?? ''), fraction: Number(message.fraction) || 0, stage: message.stage })
+        armWatchdog(jobId)
+        // The bar never moves backwards within a job, across compress and split.
+        setProgress((current) => ({ label: String(message.label ?? ''), fraction: Math.max(current.fraction, Number(message.fraction) || 0), stage: message.stage, page: positive(message.page), pages: positive(message.pages) }))
         return
       }
       if (message.type === 'compress-result') {
@@ -118,34 +137,39 @@ export default function App() {
           setProgress({ label: '', fraction: 1 })
           setStage('ready')
         } else {
+          // Engines without autoSplit hand the split back to us. The bar stays
+          // where the engine left it.
+          armWatchdog(jobId)
           setStage('splitting')
-          setProgress({ label: 'Splitting into parts', fraction: 0.97, stage: 'split' })
-          worker.postMessage({ type: 'split', jobId: jobIdRef.current, bytes: next.candidate.bytes, maxPartBytes: next.targetBytes }, [next.candidate.bytes.buffer])
+          setProgress((current) => ({ ...current, label: '', stage: 'split', page: undefined, pages: undefined }))
+          worker.postMessage({ type: 'split', jobId, bytes: next.candidate.bytes, maxPartBytes: next.targetBytes }, [next.candidate.bytes.buffer])
         }
         return
       }
       if (message.type === 'split-result') {
         clearJobTimeout()
+        if (message.outcome) setOutcome(message.outcome as CompressionOutcome)
         const source = activeFileRef.current
-        const rawParts = message.parts as Array<{ bytes: Uint8Array; pages: number }>
-        let startPage = 1
+        const rawParts = message.parts as Array<{ bytes: Uint8Array; pages: number; startPage?: number; endPage?: number }>
+        let nextPage = 1
         setParts(rawParts.map((part, index) => {
-          const next = { bytes: part.bytes, name: emailVersionName(source?.name ?? 'deck.pdf', { index: index + 1, total: rawParts.length }), startPage, endPage: startPage + part.pages - 1 }
-          startPage += part.pages
-          return next
+          const startPage = positive(part.startPage) ?? nextPage
+          const endPage = positive(part.endPage) ?? startPage + part.pages - 1
+          nextPage = endPage + 1
+          return { bytes: part.bytes, name: emailVersionName(source?.name ?? 'deck.pdf', { index: index + 1, total: rawParts.length }), startPage, endPage }
         }))
         setProgress({ label: '', fraction: 1 })
         setStage('split')
         return
       }
-      if (message.type === 'error') fail(String(message.message ?? ''), message.code)
+      if (message.type === 'error') fail(String(message.message ?? ''), message.code, { reason: message.reason, page: message.page })
     }
     return () => {
       clearJobTimeout()
       worker.terminate()
       workerRef.current = null
     }
-  }, [workerNonce, stage === 'unsupported', clearJobTimeout, fail]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [workerNonce, stage === 'unsupported', clearJobTimeout, armWatchdog, fail]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const reset = useCallback(() => {
     clearJobTimeout()
@@ -178,14 +202,7 @@ export default function App() {
     }
     activeFileRef.current = next
     const jobId = ++jobIdRef.current
-    clearJobTimeout()
-    jobTimeoutRef.current = window.setTimeout(() => {
-      if (jobId !== jobIdRef.current) return
-      workerRef.current?.terminate()
-      workerRef.current = null
-      setWorkerNonce((nonce) => nonce + 1)
-      fail('This file took too long.', 'timeout')
-    }, MAX_JOB_MS)
+    armWatchdog(jobId)
     setFile(next)
     setError(null)
     setOutcome(null)
@@ -199,13 +216,15 @@ export default function App() {
       next.arrayBuffer().then((buffer) => {
         if (jobId !== jobIdRef.current || workerRef.current !== worker) return
         setProgress((current) => ({ ...current, fraction: Math.max(current.fraction, 0.14) }))
-        worker.postMessage({ type: 'compress', jobId, bytes: new Uint8Array(buffer), profileId: requestedProfileId, customMessageMiB: requestedCustomMessageMiB }, [buffer])
+        // autoSplit asks engines that support it to split in the same job, so
+        // progress stays continuous. Older engines ignore it.
+        worker.postMessage({ type: 'compress', jobId, bytes: new Uint8Array(buffer), profileId: requestedProfileId, customMessageMiB: requestedCustomMessageMiB, autoSplit: true }, [buffer])
       }).catch(() => {
         if (jobId !== jobIdRef.current) return
         fail('The file could not be read in this browser.', 'read')
       })
     }, 0)
-  }, [profileId, customMessageMiB, stage, clearJobTimeout, fail])
+  }, [profileId, customMessageMiB, stage, armWatchdog, fail])
 
   // Drop anywhere on the page. Without this, a near-miss opens the PDF in the
   // tab and the visitor loses the page.
@@ -248,7 +267,7 @@ export default function App() {
     <p className="sr-only" aria-live="polite" aria-atomic="true">{announcement}</p>
     {stage === 'unsupported' && <Unsupported headingRef={headingRef} />}
     {(stage === 'idle' || stage === 'error') && <>
-      {error && <ErrorNote kind={error.kind} detail={error.detail} headingRef={headingRef} onDismiss={reset} />}
+      {error && <ErrorNote error={error} headingRef={headingRef} onDismiss={reset} />}
       <button
         id="emd-drop"
         className={`dropzone ${hoveringZone || draggingPage ? 'dropzone--hover' : ''}`}
@@ -282,12 +301,14 @@ export default function App() {
 
 type HeadingRef = React.RefObject<HTMLHeadingElement | null>
 
-function ErrorNote({ kind, detail, headingRef, onDismiss }: { kind: ErrorKind; detail: string; headingRef: HeadingRef; onDismiss: () => void }) {
+function ErrorNote({ error: { kind, detail, reason, page }, headingRef, onDismiss }: { error: ErrorState; headingRef: HeadingRef; onDismiss: () => void }) {
   const copy = errorCopy[kind]
+  const title = kind === 'page-too-large' && page ? pageTooLargeTitle(page) : copy.title
+  const body = kind === 'protected' && reason && reason in protectedCopy ? protectedCopy[reason] : copy.body
   return <div className="note note--error" role="alert">
     <div>
-      <h2 ref={headingRef} tabIndex={-1} data-pd-type="title.card">{copy.title}</h2>
-      <p data-pd-type="body.default">{copy.body}</p>
+      <h2 ref={headingRef} tabIndex={-1} data-pd-type="title.card">{title}</h2>
+      <p data-pd-type="body.default">{body}</p>
       {kind === 'unknown' && detail && <p className="note-detail" data-pd-type="body.small">{detail}</p>}
     </div>
     <button className="icon-button" type="button" onClick={onDismiss} aria-label="Dismiss and start again"><Icon name="close" size={18} /></button>
@@ -330,7 +351,8 @@ function Busy({ file, stage, progress, headingRef, onCancel }: { file: File; sta
   const shown = useSmoothProgress(progress.fraction, true)
   const elapsed = useElapsed(true)
   const key = stage === 'splitting' ? 'split' : stageFor(progress.label, progress.stage)
-  const label = key ? stageCopy[key] : progress.label || stageCopy.work
+  const words = key ? stageCopy[key] : progress.label || stageCopy.work
+  const label = progress.page && progress.pages && (key === 'photos' || key === 'split') ? `${words} · slide ${progress.page} of ${progress.pages}` : words
   const percent = Math.round(shown * 100)
   return <section className="panel panel--busy" aria-busy="true" aria-labelledby="emd-busy-title">
     <div className="busy-file">
