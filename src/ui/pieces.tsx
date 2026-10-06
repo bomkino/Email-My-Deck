@@ -91,7 +91,7 @@ export function TipCard() {
   const isDogFact = tip.startsWith('Dog fact:')
   return <aside className="tip-card" aria-label="Tips while you wait" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} onFocus={() => setPaused(true)} onBlur={() => setPaused(false)}>
     <div className="tip-head" data-pd-type="metadata">
-      <span>{isDogFact ? 'A short break' : busyCopy.tipsEyebrow}</span>
+      <span>{isDogFact ? busyCopy.dogFactEyebrow : busyCopy.tipsEyebrow}</span>
       <span>{String(index + 1).padStart(2, '0')} / {String(tips.length).padStart(2, '0')}</span>
     </div>
     <p className="tip-text" key={index} data-pd-type="body.default">{tip}</p>

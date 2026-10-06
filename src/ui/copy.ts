@@ -28,12 +28,12 @@ export const mailboxWhy =
 export type StageKey = 'read' | 'tidy' | 'photos' | 'resize' | 'verify' | 'split' | 'work'
 
 export const stageCopy: Record<StageKey, string> = {
-  read: 'Opening your deck, right here on this device',
-  tidy: 'Tidying the file’s insides. Nothing you can see changes.',
-  photos: 'Re-saving photos a little lighter',
+  read: 'Opening your deck, on this device only',
+  tidy: 'Tidying the file’s insides. Slides untouched.',
+  photos: 'Re-saving photos at screen quality',
   resize: 'Shrinking photos that are bigger than any screen',
-  verify: 'Checking every slide made it through',
-  split: 'Splitting it into parts that fit',
+  verify: 'Counting every slide back in',
+  split: 'Dealing the slides into parts that fit',
   work: 'Working out the best-looking version that fits',
 }
 
@@ -68,39 +68,52 @@ export const idleCopy = {
 
 export const busyCopy = {
   eyebrow: 'Working on this device',
-  reassurance: 'Nothing is being uploaded. Your device is doing the heavy lifting, so a big deck can take a minute or two.',
   splittingTitle: 'Packing it into parts',
   workingTitle: 'Making it fit',
   cancel: 'Cancel',
   tipsEyebrow: 'While you wait',
+  dogFactEyebrow: 'A short break',
   anotherTip: 'Another tip',
+  // The line under the bar changes as the wait gets longer. Each one is true:
+  // the device does the work, and the watchdog stops a stalled job and says so.
+  waits: [
+    { after: 0, text: 'Nothing is being uploaded. Your device is doing the heavy lifting, so a big deck can take a minute or two.' },
+    { after: 25_000, text: 'Still going. Big photos take a while to repack, and your device is doing every one of them itself.' },
+    { after: 75_000, text: 'Still at it. A deck this size can take a few minutes, especially on a phone. The upside: nobody else ever gets a copy.' },
+    { after: 150_000, text: 'A long one, but it’s still working. If it ever stalls, we’ll stop and say so. Good moment for a glass of water.' },
+  ],
 }
+
+export const waitFor = (elapsed: number) => [...busyCopy.waits].reverse().find((wait) => elapsed >= wait.after)?.text ?? busyCopy.waits[0].text
 
 // Loading-screen tips. Useful first, then the turn. One dog fact, because
 // someone has to keep the dogs in the conversation.
 export const tips: string[] = [
-  'This deck is about to be read, not presented. Nobody will be there to say “what this slide means is…”, so the slide has to say it.',
+  'This deck is about to be read without you in the room. Nobody will be there to say “so what this slide is saying is…”, so the slide has to say it.',
   'Name the file like someone will search for it at midnight. “Acme-Series-A-2026.pdf” beats “FINAL_final_v7 (2).pdf”.',
-  'Put the ask on a slide. People can’t say yes to a question you never asked.',
+  'Put the ask on a slide, with a number in it. “We’d love your support” is a mood. “2 million for 18 months” is a question someone can say yes to.',
   'If you have to apologise for a slide (“sorry, this one’s busy”), you already know what to do with it.',
   'Squint at each slide. Whatever you can still make out is what it’s about. Hopefully on purpose.',
   'Decks get forwarded. Put your name and email on the last slide so yours can find its way home.',
   'A number needs company. “40%” of what, since when, compared to whom?',
-  'Give every chart a headline that says what to see. “Revenue doubled” beats “Revenue, 2024–2026”.',
+  'Give every chart a headline that says what to see. “Revenue doubled” beats “Revenue, 2024–2026”. Nobody has ever been moved by an axis label.',
   'Your deck doesn’t have to explain everything. It has to earn the meeting where you do.',
   'Heavy decks are usually heavy because of three enormous photos. A 6,000-pixel image on a slide is a poster in disguise.',
-  'Video rarely survives the trip into a PDF. Use a great still and a link. People click on a good frame.',
+  'Video rarely survives the trip into a PDF. Put in your best frame and a link. People click a good still. Nobody clicks a mysterious grey rectangle.',
   'Light grey text on white looks elegant on your screen and invisible on everyone else’s.',
   'Page numbers, please. Somebody will want to say “about slide 12…” in the reply.',
   'One idea per slide. Two if they’re small and get along.',
   'Read it out loud once. The slide you rush through is the one to cut.',
   'The appendix is where good slides go to be optional. Let them.',
-  'Nobody has ever reached the end of a deck and wished for more bullet points.',
-  'Do the maths for your reader. Show the working in the appendix.',
+  'A bullet point with its own bullet points is a document wearing a slide costume.',
+  'Do the maths for your reader. Nobody opens a calculator to fall for a business. Show the working in the appendix.',
   'Fonts tend to go missing when you send the slides file itself. A PDF keeps them. Which, look at you, you already knew.',
   'Typos are tiny and somehow the only thing anyone remembers. One more read before you send.',
   'Save the mystery for the film. The first slide should say what this is in one line.',
   'Write the email like it’s slide zero. It gets read first.',
+  'Plenty of decks get opened on a phone first, between two other things. Check that your smallest text survives that.',
+  'Logos of companies you’ve talked to are not traction. Logos of companies that paid you are.',
+  'If the team slide is the best slide, either the team is great or the rest needs work. Possibly both.',
   'Dog fact: no two dogs have the same nose print. It works like a fingerprint. (Nothing to do with decks. You looked like you needed a break.)',
 ]
 

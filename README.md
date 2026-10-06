@@ -66,7 +66,7 @@ Copy `dist-pitchdog/` to `apps/main-site/email-my-deck/` in `bomkino/pitchdog-cl
 - Candidates always start from the untouched original. The winner is the highest-fidelity eligible candidate under the raw PDF budget; a small file is never padded toward the ceiling.
 - `pdf-lib` handles page-balanced split recovery and verification.
 
-The compression engine never receives user-controlled command-line arguments. A 120-second browser-job watchdog prevents a pathological file from leaving the interface spinning forever. Large engine assets are bundled and self-hostable. The Ghostscript WebAssembly distribution is AGPL-3.0-or-later; see [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) and [PROVENANCE.md](PROVENANCE.md) before redistribution.
+The compression engine never receives user-controlled command-line arguments. A browser-job watchdog stops any job that goes 120 seconds without a progress event, so a pathological file never leaves the interface spinning forever while a big deck that keeps moving is never cut off. Large engine assets are bundled and self-hostable. The Ghostscript WebAssembly distribution is AGPL-3.0-or-later; see [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) and [PROVENANCE.md](PROVENANCE.md) before redistribution.
 
 ## Cloudflare Pages
 

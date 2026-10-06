@@ -4,7 +4,7 @@ import { emailVersionName } from './lib/filename'
 import { getTargetProfile, TARGET_PROFILES, type TargetProfileId } from './lib/profiles'
 import {
   busyCopy, errorCopy, errorKindFor, idleCopy, mailboxCopy, mailboxWhy, pageTooLargeTitle, protectedCopy, readyCopy, splitCopy,
-  stageCopy, stageFor, unsupportedCopy, whatWeDid, type ErrorKind,
+  stageCopy, stageFor, unsupportedCopy, waitFor, whatWeDid, type ErrorKind,
 } from './ui/copy'
 import { deckName, formatElapsed, formatSize, percentLighter } from './ui/format'
 import { DeckStack, Icon, Meter, Stamp, TipCard, useElapsed, useSmoothProgress } from './ui/pieces'
@@ -366,7 +366,7 @@ function Busy({ file, stage, progress, headingRef, onCancel }: { file: File; sta
       <span className="progress-fill" style={{ '--progress': shown } as React.CSSProperties} />
     </div>
     <div className="progress-meta" data-pd-type="data"><span className="progress-label">{label}</span><span>{percent}% · {formatElapsed(elapsed)}</span></div>
-    <p className="busy-note" data-pd-type="body.small">{busyCopy.reassurance}</p>
+    <p className="busy-note" key={waitFor(elapsed)} data-pd-type="body.small">{waitFor(elapsed)}</p>
     <TipCard />
     <button className="text-button busy-cancel" onClick={onCancel} type="button">{busyCopy.cancel}</button>
   </section>

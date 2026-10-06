@@ -218,11 +218,11 @@ body.mobile-menu-open { overflow: hidden; }
 @keyframes stripes { to { background-position: 28.28px 0; } }
 .progress-meta { max-inline-size: none; display: flex; justify-content: space-between; gap: 16px; color: var(--muted); }
 .progress-label { color: var(--ink); }
-.busy-note { color: var(--muted); }
+.busy-note { color: var(--muted); animation: fade 600ms ease both; }
 .busy-cancel { justify-self: start; }
 
 .tip-card { margin-top: 6px; padding: 22px 22px 18px; display: grid; gap: 14px; background: var(--room); color: var(--room-ink); --pd-type-ink: var(--room-ink); }
-.tip-head { display: flex; justify-content: space-between; color: var(--room-muted); text-transform: uppercase; }
+.tip-head { max-inline-size: none; display: flex; justify-content: space-between; color: var(--room-muted); text-transform: uppercase; }
 .tip-text { min-height: 4.6em; font-size: clamp(1.08rem, 1rem + .3vw, 1.28rem); line-height: 1.45; animation: tip-in 560ms var(--ease) both; }
 @keyframes tip-in { from { opacity: 0; transform: translateY(8px); filter: blur(3px); } }
 .tip-next { justify-self: start; min-height: 36px; padding: 0 12px; display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--room-rule); background: transparent; color: var(--room-ink); font: 600 .68rem/1 var(--mono); letter-spacing: .05em; text-transform: uppercase; cursor: pointer; }
