@@ -1,0 +1,7 @@
+node_modules/
+dist/
+*.png
+*.err
+dom.txt
+corpus/*.pdf
+corpus/*.json
