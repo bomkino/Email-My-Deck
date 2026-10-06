@@ -1,0 +1,48 @@
+name: CI
+
+# Tests the code and the built site on every pull request and on main.
+# It never deploys; deploy-pages.yml does that.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Generate synthetic corpus
+        run: npm run corpus
+      - name: Find a browser
+        run: |
+          for candidate in /usr/bin/chromium /usr/bin/chromium-browser /usr/bin/google-chrome; do
+            if [ -x "$candidate" ]; then echo "CHROMIUM_PATH=$candidate" >> "$GITHUB_ENV"; break; fi
+          done
+          # scripts/smoke.mjs may look for /usr/bin/chromium.
+          if [ ! -e /usr/bin/chromium ] && [ -x /usr/bin/google-chrome ]; then sudo ln -s /usr/bin/google-chrome /usr/bin/chromium; fi
+      - name: Engine check on the built site
+        run: node scripts/engine-check.mjs
+      - name: Page smoke test on the built site
+        run: |
+          node scripts/serve-dist.mjs dist 5173 > /tmp/serve-dist.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:5173/ >/dev/null; then break; fi
+            sleep 1
+          done
+          npm run smoke

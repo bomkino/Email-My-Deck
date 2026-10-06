@@ -1,0 +1,135 @@
+import { stripJpegMetadata } from './jpeg'
+import type { OutputFormat } from './ladder'
+
+export type CodecSource =
+  | { kind: 'jpeg'; bytes: Uint8Array }
+  | { kind: 'raw'; bytes: Uint8Array; width: number; height: number; components: 1 | 3 }
+
+export type CodecOutput = { width: number; height: number; format: OutputFormat; quality?: number }
+export type CodecResult = { bytes: Uint8Array; width: number; height: number; format: OutputFormat }
+
+/** Decodes an image once and produces each requested output from it. */
+export interface ImageCodec {
+  encode(source: CodecSource, outputs: CodecOutput[]): Promise<CodecResult[]>
+  /** How many images may be in flight at once. */
+  concurrency?: number
+}
+
+export function browserCodecAvailable(): boolean {
+  return typeof OffscreenCanvas === 'function' && typeof createImageBitmap === 'function' && typeof CompressionStream === 'function'
+}
+
+export async function deflate(data: Uint8Array): Promise<Uint8Array> {
+  // "deflate" in the Compression Streams API is the zlib format, which is exactly FlateDecode.
+  const stream = new Blob([data as BlobPart]).stream().pipeThrough(new CompressionStream('deflate'))
+  return new Uint8Array(await new Response(stream).arrayBuffer())
+}
+
+function rawToImageData(source: Extract<CodecSource, { kind: 'raw' }>): ImageData {
+  const { width, height, components, bytes } = source
+  const count = width * height
+  if (bytes.byteLength < count * components) throw new Error('Image samples are shorter than the image size.')
+  const rgba = new Uint8ClampedArray(count * 4)
+  const words = new Uint32Array(rgba.buffer)
+  // ImageData is RGBA in memory; on little-endian machines that is 0xAABBGGRR per pixel.
+  const littleEndian = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1
+  if (components === 3) {
+    for (let pixel = 0, sample = 0; pixel < count; pixel += 1, sample += 3) {
+      const r = bytes[sample], g = bytes[sample + 1], b = bytes[sample + 2]
+      words[pixel] = littleEndian ? (0xff000000 | (b << 16) | (g << 8) | r) >>> 0 : ((r << 24) | (g << 16) | (b << 8) | 0xff) >>> 0
+    }
+  } else {
+    for (let pixel = 0; pixel < count; pixel += 1) {
+      const v = bytes[pixel]
+      words[pixel] = littleEndian ? (0xff000000 | (v << 16) | (v << 8) | v) >>> 0 : ((v << 24) | (v << 16) | (v << 8) | 0xff) >>> 0
+    }
+  }
+  return new ImageData(rgba, width, height)
+}
+
+async function decode(source: CodecSource): Promise<ImageBitmap> {
+  const options: ImageBitmapOptions = { colorSpaceConversion: 'none', premultiplyAlpha: 'none' }
+  if (source.kind === 'jpeg') {
+    return createImageBitmap(new Blob([stripJpegMetadata(source.bytes) as BlobPart], { type: 'image/jpeg' }), options)
+  }
+  return createImageBitmap(rawToImageData(source), options)
+}
+
+function context2d(canvas: OffscreenCanvas, readBack: boolean): OffscreenCanvasRenderingContext2D {
+  const context = canvas.getContext('2d', { alpha: false, willReadFrequently: readBack }) as OffscreenCanvasRenderingContext2D | null
+  if (!context) throw new Error('2D canvas unavailable.')
+  context.imageSmoothingEnabled = true
+  context.imageSmoothingQuality = 'high'
+  return context
+}
+
+type Surface = { image: CanvasImageSource; width: number; height: number; canvas: OffscreenCanvas | null }
+
+/**
+ * Draw `width`×`height` from the smallest surface already made that is at
+ * least that big, halving until within 2× first (large single-step
+ * reductions alias in some browsers). Every canvas made is kept in
+ * `surfaces`, so several outputs of one image share the expensive steps.
+ */
+function drawScaled(surfaces: Surface[], width: number, height: number, readBack: boolean): OffscreenCanvas {
+  const exact = surfaces.find((surface) => surface.canvas && surface.width === width && surface.height === height)
+  if (exact?.canvas) return exact.canvas
+  let from = surfaces[0]
+  for (const surface of surfaces) {
+    if (surface.width >= width && surface.height >= height && surface.width * surface.height < from.width * from.height) from = surface
+  }
+  let current = from
+  while (current.width / 2 >= width && current.height / 2 >= height) {
+    const nextWidth = Math.max(width, Math.floor(current.width / 2))
+    const nextHeight = Math.max(height, Math.floor(current.height / 2))
+    const step = new OffscreenCanvas(nextWidth, nextHeight)
+    context2d(step, false).drawImage(current.image, 0, 0, nextWidth, nextHeight)
+    current = { image: step, width: nextWidth, height: nextHeight, canvas: step }
+    surfaces.push(current)
+  }
+  const canvas = new OffscreenCanvas(width, height)
+  context2d(canvas, readBack).drawImage(current.image, 0, 0, width, height)
+  surfaces.push({ image: canvas, width, height, canvas })
+  return canvas
+}
+
+async function render(surfaces: Surface[], output: CodecOutput): Promise<CodecResult> {
+  const readBack = output.format !== 'jpeg'
+  const canvas = drawScaled(surfaces, output.width, output.height, readBack)
+  if (output.format === 'jpeg') {
+    const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: output.quality ?? 0.82 })
+    if (blob.type !== 'image/jpeg') throw new Error('This browser cannot write JPEG images.')
+    return { bytes: new Uint8Array(await blob.arrayBuffer()), width: output.width, height: output.height, format: output.format }
+  }
+  const pixels = context2d(canvas, true).getImageData(0, 0, output.width, output.height).data
+  const count = output.width * output.height
+  const components = output.format === 'flate-rgb' ? 3 : 1
+  const samples = new Uint8Array(count * components)
+  if (components === 3) {
+    for (let pixel = 0, sample = 0, offset = 0; pixel < count; pixel += 1, sample += 3, offset += 4) {
+      samples[sample] = pixels[offset]
+      samples[sample + 1] = pixels[offset + 1]
+      samples[sample + 2] = pixels[offset + 2]
+    }
+  } else {
+    for (let pixel = 0, offset = 0; pixel < count; pixel += 1, offset += 4) samples[pixel] = pixels[offset]
+  }
+  return { bytes: await deflate(samples), width: output.width, height: output.height, format: output.format }
+}
+
+export const browserCodec: ImageCodec = {
+  async encode(source, outputs) {
+    const bitmap = await decode(source)
+    const surfaces: Surface[] = [{ image: bitmap, width: bitmap.width, height: bitmap.height, canvas: null }]
+    try {
+      // Largest first, so each smaller output can start from a bigger one already drawn.
+      const order = outputs.map((_, index) => index).sort((a, b) => outputs[b].width * outputs[b].height - outputs[a].width * outputs[a].height)
+      const results: CodecResult[] = new Array(outputs.length)
+      for (const index of order) results[index] = await render(surfaces, outputs[index])
+      return results
+    } finally {
+      bitmap.close()
+      surfaces.length = 0
+    }
+  },
+}

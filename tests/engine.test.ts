@@ -1,0 +1,199 @@
+// @vitest-environment node
+import { PDFDocument, PDFName, PDFRawStream } from 'pdf-lib'
+import { describe, expect, it } from 'vitest'
+import { toOutcome } from '../src/lib/compression'
+import type { CodecOutput } from '../src/lib/engine/codec'
+import { compressDocument, type EngineDeps } from '../src/lib/engine/engine'
+import { EngineError } from '../src/lib/engine/errors'
+import type { ProgressEvent } from '../src/lib/engine/progress'
+import { splitDocument } from '../src/lib/engine/split'
+import { getTargetProfile, rawBudgetBytes } from '../src/lib/profiles'
+import { addJavaScript, addSignatureField, nodeCodec, nodeQpdf, pageCount, photoDeck, qpdfTransform, textDeck } from './helpers/engine'
+
+function deps(events: ProgressEvent[] = [], log: CodecOutput[][] = []): EngineDeps {
+  return { qpdf: nodeQpdf, codec: nodeCodec(log), onProgress: (event) => events.push(event) }
+}
+
+async function imageSizes(bytes: Uint8Array): Promise<Array<[number, number, string]>> {
+  const document = await PDFDocument.load(bytes)
+  const sizes: Array<[number, number, string]> = []
+  for (const [, object] of document.context.enumerateIndirectObjects()) {
+    if (!(object instanceof PDFRawStream)) continue
+    if (object.dict.get(PDFName.of('Subtype'))?.toString() !== '/Image') continue
+    sizes.push([Number(object.dict.get(PDFName.of('Width'))?.toString()), Number(object.dict.get(PDFName.of('Height'))?.toString()), String(object.dict.get(PDFName.of('Filter')))])
+  }
+  return sizes
+}
+
+async function codeOf(promise: Promise<unknown>): Promise<string | undefined> {
+  try {
+    await promise
+  } catch (error) {
+    if (error instanceof EngineError) return error.reason ? `${error.code}:${error.reason}` : error.code
+    throw error
+  }
+  return undefined
+}
+
+describe('compressDocument', () => {
+  it('returns a file that already fits byte for byte', async () => {
+    const input = await textDeck(3)
+    const copy = input.slice()
+    const result = await compressDocument(input, input.byteLength + 1, deps())
+    expect(result.kind).toBe('original')
+    expect(result.bytes).toEqual(copy)
+    expect(result.pageCount).toBe(3)
+    expect(result.checks).toEqual(['unchanged'])
+  })
+
+  it('re-saves oversized photos to fit, keeping every page and its size', async () => {
+    const input = await photoDeck({ pages: 6, image: [1200, 675], drawn: [240, 135], titlePage: true })
+    const events: ProgressEvent[] = []
+    const budget = Math.floor(input.byteLength * 0.6)
+    const result = await compressDocument(input.slice(), budget, deps(events))
+    expect(result.kind).toBe('images')
+    expect(result.bytes.byteLength).toBeLessThanOrEqual(budget)
+    expect(result.pageCount).toBe(7)
+    expect(result.checks).toEqual(['page-count', 'page-size', 'structure'])
+    expect(await pageCount(result.bytes)).toBe(7)
+    const output = await PDFDocument.load(result.bytes)
+    expect(output.getPages().map((page) => [page.getWidth(), page.getHeight()])).toEqual(Array.from({ length: 7 }, () => [960, 540]))
+    // Drawn at 240 pt on a 960 pt slide: the sharpest rung keeps 3840/960 × 240 = 960 px.
+    const sizes = await imageSizes(result.bytes)
+    expect(sizes.length).toBe(6)
+    for (const [width] of sizes) expect(width).toBeLessThanOrEqual(960)
+    expect(result.images.resized).toBe(6)
+    // Progress only moves forward and names real stages.
+    const fractions = events.map((event) => event.fraction)
+    expect(fractions).toEqual([...fractions].sort((a, b) => a - b))
+    for (const event of events) expect(['inspect', 'tidy', 'photos', 'resize', 'verify']).toContain(event.stage)
+    expect(events.some((event) => event.stage === 'resize' && event.page !== undefined)).toBe(true)
+    expect(events.at(-1)?.fraction).toBeLessThanOrEqual(0.9)
+  })
+
+  it('handles decks whose pages share one resource dictionary', async () => {
+    const input = await photoDeck({ pages: 5, image: [1000, 560], sharedResources: true })
+    const budget = Math.floor(input.byteLength * 0.75)
+    const result = await compressDocument(input.slice(), budget, deps())
+    expect(result.kind).toBe('images')
+    expect(result.bytes.byteLength).toBeLessThanOrEqual(budget)
+    expect(await pageCount(result.bytes)).toBe(5)
+  })
+
+  it('asks for a split when even the floor does not fit, and the split prunes shared resources', async () => {
+    const input = await photoDeck({ pages: 6, image: [1600, 900], sharedResources: true })
+    const budget = Math.floor(input.byteLength / 3.5)
+    const log: CodecOutput[][] = []
+    const result = await compressDocument(input.slice(), budget, { ...deps([], log) }, { keepSession: true })
+    expect(result.kind).toBe('split-needed')
+    expect(result.splitReason).toBe('quality-floor')
+    expect(result.session && result.path).toBeTruthy()
+    const parts = await splitDocument({ session: result.session!, path: result.path! }, budget, { qpdf: nodeQpdf })
+    expect(parts.length).toBeGreaterThan(1)
+    expect(parts.length).toBeLessThan(6)
+    let pages = 0
+    for (const part of parts) {
+      expect(part.bytes.byteLength).toBeLessThanOrEqual(budget)
+      const count = await pageCount(part.bytes)
+      expect(count).toBe(part.endPage - part.startPage + 1)
+      // Only the images this part draws travel with it.
+      expect((await imageSizes(part.bytes)).length).toBe(count)
+      pages += count
+    }
+    expect(pages).toBe(6)
+    expect(parts[0].startPage).toBe(1)
+    expect(parts.at(-1)?.endPage).toBe(6)
+  })
+
+  it('falls back to a lossless split when the browser cannot resize images', async () => {
+    const input = await photoDeck({ pages: 3 })
+    const result = await compressDocument(input.slice(), 1000, { qpdf: nodeQpdf, codec: null })
+    expect(result.kind).toBe('split-needed')
+    expect(result.splitReason).toBe('browser-cannot-resize')
+  })
+
+  it('reports a page that cannot fit on its own', async () => {
+    const input = await photoDeck({ pages: 2 })
+    expect(await codeOf(splitDocument(input, 5_000, { qpdf: nodeQpdf }))).toBe('page-too-large')
+  })
+
+  it('splits bytes sent by an older page without an automatic split', async () => {
+    const input = await photoDeck({ pages: 4, image: [800, 450] })
+    const onePage = Math.ceil(input.byteLength / 3)
+    const parts = await splitDocument(input, onePage, { qpdf: nodeQpdf })
+    expect(parts.length).toBeGreaterThanOrEqual(2)
+    expect(parts.every((part) => part.bytes.byteLength <= onePage)).toBe(true)
+  })
+})
+
+describe('what the engine refuses, and what it no longer refuses', () => {
+  const tooSmall = 100
+
+  it('refuses a file that is not a PDF', async () => {
+    expect(await codeOf(compressDocument(new TextEncoder().encode('hello, this is a text file'), tooSmall, deps()))).toBe('not-pdf')
+  })
+
+  it('calls a broken PDF damaged', async () => {
+    const bytes = new TextEncoder().encode('%PDF-1.7\n' + 'x'.repeat(4000))
+    expect(await codeOf(compressDocument(bytes, tooSmall, deps()))).toBe('damaged')
+  })
+
+  it('tells a password-protected file apart from a permissions-restricted one', async () => {
+    const plain = await textDeck(2)
+    const locked = await qpdfTransform(plain, ['--encrypt', 'open-sesame', 'owner', '256', '--', '{in}', '{out}'])
+    const restricted = await qpdfTransform(plain, ['--encrypt', '', 'owner', '256', '--modify=none', '--extract=n', '--', '{in}', '{out}'])
+    expect(await codeOf(compressDocument(locked, tooSmall, deps()))).toBe('password')
+    expect(await codeOf(compressDocument(restricted, tooSmall, deps()))).toBe('restricted')
+  })
+
+  it('works on a file encrypted without restrictions', async () => {
+    const plain = await photoDeck({ pages: 3, image: [1200, 675], drawn: [240, 135] })
+    const open = await qpdfTransform(plain, ['--encrypt', '', 'owner', '256', '--', '{in}', '{out}'])
+    const result = await compressDocument(open, Math.floor(open.byteLength * 0.7), deps())
+    expect(result.kind).toBe('images')
+    expect(result.pageCount).toBe(3)
+  })
+
+  it('refuses forms, signatures, attachments and scripts with the reason', async () => {
+    const forms = await textDeck(1, (document) => {
+      document.getForm().createTextField('name').addToPage(document.getPage(0))
+    })
+    const signed = await textDeck(1, (document) => {
+      addSignatureField(document)
+    })
+    const attached = await textDeck(1, async (document) => {
+      await document.attach(new TextEncoder().encode('notes'), 'notes.txt', { mimeType: 'text/plain' })
+    })
+    const scripted = await textDeck(1, addJavaScript)
+    expect(await codeOf(compressDocument(forms, tooSmall, deps()))).toBe('protected:forms')
+    expect(await codeOf(compressDocument(signed, tooSmall, deps()))).toBe('protected:signature')
+    expect(await codeOf(compressDocument(attached, tooSmall, deps()))).toBe('protected:attachments')
+    expect(await codeOf(compressDocument(scripted, tooSmall, deps()))).toBe('protected:javascript')
+  })
+
+  it('does not mistake words inside page content for features', async () => {
+    // The old byte scan refused files whose streams merely contained these names.
+    const document = await PDFDocument.create()
+    const page = document.addPage([600, 400])
+    const content = document.context.register(document.context.stream('BT /F1 12 Tf 40 200 Td (/AcroForm /JavaScript /JS /EmbeddedFile /Encrypt) Tj ET % /Sig'))
+    page.node.set(PDFName.of('Contents'), content)
+    const bytes = await document.save({ useObjectStreams: true })
+    const result = await compressDocument(bytes, bytes.byteLength + 1, deps())
+    expect(result.kind).toBe('original')
+  })
+})
+
+describe('outcome for the page', () => {
+  it('describes a resized result in plain words and keeps older fields', async () => {
+    const input = await photoDeck({ pages: 3, image: [1200, 675], drawn: [240, 135] })
+    const profile = getTargetProfile('custom', 5)
+    const result = await compressDocument(input.slice(), Math.floor(input.byteLength * 0.6), deps())
+    const outcome = toOutcome(result, input.byteLength, profile, rawBudgetBytes(profile))
+    expect(outcome.candidate.engine).toBe('images')
+    expect(outcome.candidate.quality).toBe('strong')
+    expect(outcome.inspection.pages).toBe(3)
+    expect(outcome.verified).toBe(true)
+    expect(outcome.receipt.images.resized).toBe(3)
+    expect(outcome.candidate.notes.join(' ')).toMatch(/Resized 3 images/)
+  })
+})
