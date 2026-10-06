@@ -6,6 +6,7 @@
 - When a deck can't fit one email, the page says so, gives the reason and the lightest size reached, then offers one link (our pick) before the parts, and Gmail to Gmail when that would fit. Splitting is the last resort.
 - Nothing is split until the visitor chooses to. The split card starts at parts of about the same size, lets them move each split with a slider, and shows every part's size before anything is made. A part that would be too big is flagged, and the button waits until it fits. From the parts, "Change where it splits" goes back to the choice.
 - Engine: a result that doesn't fit carries `splitPlan` (`sharedBytes`, `pageBytes`), measured after QPDF gives each page only the resources it uses. On a 66-slide design-tool deck it lands within 2% of the real parts. `split` takes `breakAfter` to split exactly there and marks each part's `fits`. A split the visitor starts gets the whole progress bar.
+- The page speaks the squeeze: the receipt says photos went "to at least" the lightest size used (the fill makes many sharper) and owns up to trimmed drawings; the can't-fit reason says how much of the deck we can only trim, or keep exactly, when the engine reports `weight`; the last pass gets its own step words ("Spending the room left on sharper photos"); and "an 8 MB limit" reads as said.
 
 ### Engine: squeeze before splitting
 
