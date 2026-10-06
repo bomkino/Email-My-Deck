@@ -27,14 +27,16 @@ export const mailboxWhy =
 
 export type StageKey = 'read' | 'tidy' | 'photos' | 'resize' | 'verify' | 'split' | 'work'
 
+// The real step, next to the percentage. Plain on purpose: the curve balls
+// below take turns with it, and this is the line that says nothing's stuck.
 export const stageCopy: Record<StageKey, string> = {
-  read: 'Opening your deck. Nobody else is invited.',
-  tidy: 'Tidying the file’s insides. Your slides won’t notice.',
-  photos: 'Asking the photos to pack lighter',
-  resize: 'Shrinking photos that were dressed for a billboard',
+  read: 'Opening your deck',
+  tidy: 'Tidying the file’s insides',
+  photos: 'Re-saving photos',
+  resize: 'Resizing oversized photos',
   verify: 'Counting every slide back in',
-  split: 'Splitting it into parts. Nobody gets left behind.',
-  work: 'Trying on versions until one fits',
+  split: 'Splitting it into emails',
+  work: 'Trying versions until one fits',
 }
 
 // Map whatever the engine reports onto plain words. Unknown labels fall
@@ -125,6 +127,40 @@ export const commentary: Record<CommentaryKey, string[]> = {
     'This counts as work. Tell anyone who asks that you’re compressing a deck.',
     'The progress bar is doing its best. It moves when the work does, and fidgets a little in between.',
     'The 25 MB limit was set by someone who never had to email a deck. We think about them often.',
+  ],
+}
+
+// Fake steps that slip in between the real ones, next to the percentage.
+// Short, so they fit beside it on a phone. None of them is about a dog.
+export const curveBalls: Record<CommentaryKey, string[]> = {
+  read: [
+    'Politely not reading your slides',
+    'Keeping the guest list short',
+  ],
+  tidy: [
+    'Throwing out the packing peanuts',
+    'Finding things nobody will miss',
+  ],
+  photos: [
+    'Rolling the socks',
+    'Leaving the third coat behind',
+    'Sitting on the suitcase',
+    'Complimenting the photos',
+  ],
+  verify: [
+    'Counting heads',
+    'Checking under the seats',
+  ],
+  split: [
+    'Buying a second suitcase',
+    'Deciding who sits with who',
+  ],
+  any: [
+    'Still not uploading anything',
+    'Making this look easy',
+    'Doing the maths twice',
+    'Glaring at the 25 MB limit',
+    'Whistling casually',
   ],
 }
 

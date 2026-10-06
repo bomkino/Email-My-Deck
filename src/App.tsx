@@ -7,7 +7,7 @@ import {
   stageCopy, stageFor, unsupportedCopy, waitFor, whatWeDid, type ErrorKind,
 } from './ui/copy'
 import { deckName, formatElapsed, formatSize, percentLighter } from './ui/format'
-import { DeckStack, Icon, Meter, Stamp, TipCard, useElapsed, useSmoothProgress } from './ui/pieces'
+import { DeckStack, Icon, Meter, Stamp, TipCard, useElapsed, useSmoothProgress, useStatusLine } from './ui/pieces'
 
 type Stage = 'idle' | 'reading' | 'compressing' | 'splitting' | 'ready' | 'split' | 'error' | 'unsupported'
 type SplitPart = { bytes: Uint8Array; name: string; startPage: number; endPage: number }
@@ -354,6 +354,7 @@ function Busy({ file, stage, progress, headingRef, onCancel }: { file: File; sta
   const words = key ? stageCopy[key] : progress.label || stageCopy.work
   const label = progress.page && progress.pages && (key === 'photos' || key === 'split') ? `${words} · slide ${progress.page} of ${progress.pages}` : words
   const percent = Math.round(shown * 100)
+  const status = useStatusLine(key, label)
   return <section className="panel panel--busy" aria-busy="true" aria-labelledby="emd-busy-title">
     <div className="busy-file">
       <span className="busy-file-icon"><Icon name="file" size={22} /></span>
@@ -365,7 +366,7 @@ function Busy({ file, stage, progress, headingRef, onCancel }: { file: File; sta
     <div className="progress" role="progressbar" aria-label="Progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} aria-valuetext={`${percent}%. ${label}`}>
       <span className="progress-fill" style={{ '--progress': shown } as React.CSSProperties} />
     </div>
-    <div className="progress-meta" data-pd-type="data"><span className="progress-label">{label}</span><span>{percent}% · {formatElapsed(elapsed)}</span></div>
+    <div className="progress-meta" data-pd-type="data"><span className={`progress-label${status.real ? '' : ' progress-label--aside'}`} key={status.text}>{status.text}</span><span>{percent}% · {formatElapsed(elapsed)}</span></div>
     <p className="busy-note" key={waitFor(elapsed)} data-pd-type="body.small">{waitFor(elapsed)}</p>
     <TipCard stage={key} />
     <button className="text-button busy-cancel" onClick={onCancel} type="button">{busyCopy.cancel}</button>

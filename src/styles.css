@@ -217,7 +217,8 @@ body.mobile-menu-open { overflow: hidden; }
 .progress-fill::after { content: ""; position: absolute; right: 0; top: 0; bottom: 0; width: 6px; background: var(--signal); }
 @keyframes stripes { to { background-position: 28.28px 0; } }
 .progress-meta { max-inline-size: none; display: flex; justify-content: space-between; gap: 16px; color: var(--muted); }
-.progress-label { color: var(--ink); }
+.progress-label { color: var(--ink); animation: fade 300ms ease both; }
+.progress-label--aside { color: var(--muted); }
 .busy-note { color: var(--muted); animation: fade 600ms ease both; }
 .busy-cancel { justify-self: start; }
 
@@ -396,6 +397,9 @@ body.mobile-menu-open { overflow: hidden; }
   .nerd-body { grid-template-columns: 1fr; }
 }
 @media (max-width: 600px) {
+  /* Room for two lines, so a long step or curve ball doesn't make the screen jump. */
+  .progress-meta { align-items: start; }
+  .progress-label { min-block-size: 2lh; }
   :root { --page: calc(100vw - 32px); }
   .nav { min-height: 60px; }
   .brand span { display: none; }

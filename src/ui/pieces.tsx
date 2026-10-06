@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { busyCopy, commentary, commentaryKeyFor, dogFact, type CommentaryKey, type StageKey } from './copy'
+import { busyCopy, commentary, commentaryKeyFor, curveBalls, dogFact, type CommentaryKey, type StageKey } from './copy'
 import { formatSize } from './format'
 
 type IconName = 'file' | 'download' | 'check' | 'arrow' | 'copy' | 'link' | 'close' | 'shuffle'
@@ -85,6 +85,44 @@ function shuffle<T>(items: T[]): T[] {
     ;[copy[i], copy[j]] = [copy[j], copy[i]]
   }
   return copy
+}
+
+const FIRST_MS = 1200
+const REAL_MS = 2600
+const CURVE_BALL_MS = 1800
+
+/**
+ * The line next to the percentage: the real step, with a fake one slipped in
+ * now and then. A new step always gets a moment on its own first.
+ */
+export function useStatusLine(stage: StageKey | null, real: string): { text: string; real: boolean } {
+  const key = commentaryKeyFor(stage)
+  const pools = useMemo(() => Object.fromEntries((Object.keys(curveBalls) as CommentaryKey[]).map((name) => [name, shuffle(curveBalls[name])])) as Record<CommentaryKey, string[]>, [])
+  const used = useRef(new Set<string>())
+  const inStage = useRef(0)
+  const [curveBall, setCurveBall] = useState<string | null>(null)
+  const pick = useCallback(() => {
+    const own = pools[key].filter((line) => !used.current.has(line))
+    const options = own.length ? own : pools.any.filter((line) => !used.current.has(line))
+    if (!options.length) { used.current.clear(); return pools[key][0] ?? pools.any[0] }
+    used.current.add(options[0])
+    return options[0]
+  }, [pools, key])
+  useEffect(() => { inStage.current = 0 }, [key])
+  // The real step stays up for a while, then a curve ball. Slide counts tick
+  // often and don't restart the wait; a new step does.
+  useEffect(() => {
+    if (curveBall) return
+    const timer = window.setTimeout(() => { inStage.current += 1; setCurveBall(pick()) }, inStage.current ? REAL_MS : FIRST_MS)
+    return () => window.clearTimeout(timer)
+  }, [curveBall, key, pick])
+  // A curve ball gets its full moment, even if the step changes under it.
+  useEffect(() => {
+    if (!curveBall) return
+    const timer = window.setTimeout(() => setCurveBall(null), CURVE_BALL_MS)
+    return () => window.clearTimeout(timer)
+  }, [curveBall])
+  return curveBall ? { text: curveBall, real: false } : { text: real, real: true }
 }
 
 /**
