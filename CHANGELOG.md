@@ -8,6 +8,18 @@
 - Engine: a result that doesn't fit carries `splitPlan` (`sharedBytes`, `pageBytes`), measured after QPDF gives each page only the resources it uses. On a 66-slide design-tool deck it lands within 2% of the real parts. `split` takes `breakAfter` to split exactly there and marks each part's `fits`. A split the visitor starts gets the whole progress bar.
 - The page speaks the squeeze: the receipt says photos went "to at least" the lightest size used (the fill makes many sharper) and owns up to trimmed drawings; the can't-fit reason says how much of the deck we can only trim, or keep exactly, when the engine reports `weight`; the last pass gets its own step words ("Spending the room left on sharper photos"); and "an 8 MB limit" reads as said.
 
+### Engine: flatten (the nuke)
+
+When a deck can't fit one email, the page can now offer a third way: turn every slide into one picture and squeeze those. It only runs when the visitor asks for it. Text stops being searchable and links stop working, but the deck stays one file. In Chrome, the 24 MB Figma deck flattens to one 13.9 MB file for strict 20 MB mailboxes with every slide still 2400 px across, in about 45 s. At a 6 MB limit it still fits, with no slide below 1216 px.
+
+- PDF.js draws each slide at 2400 px in the PDF worker, on its own nested worker for parsing. Fonts are drawn as outlines. The standard fonts, CMaps and the JPEG 2000 and JBIG2 decoders are bundled files, fetched only when a deck needs them, so nothing leaves the browser. They are loaded only when someone flattens.
+- Each slide is re-saved at eight rungs, from 2400 px at JPEG quality 82 down to 1024 px at 50, on a few nested workers while the next slide is drawn. Full size at low quality comes before smaller sizes: on a screen it reads sharper for the same bytes.
+- Every version is scored against the sharp drawing at screen size, 1920 px across. The score is structural similarity of 8×8 blocks of luminance, weighted by how much contrast each block holds and pulled down by the worst-hit 5% (`src/lib/engine/perceptual.ts`).
+- Slides step down where a step gives up the least clarity per byte saved, so photos give way before small print. Room the last step left goes back where it helps most.
+- No slide goes below a clarity floor (0.7, set by eye: 8 pt text on a 16:9 slide still reads cleanly at screen size). When even that doesn't fit, the result comes back over budget (`fits: false`) with the lightest size reached, instead of as mush.
+- `compress` takes `mode: 'flatten'`, and the result is `candidate.engine: 'flattened'` with `receipt.flatten` (`pages`, `longEdgePx` and `jpegQuality` of the lightest slide, and the lowest `clarity`). Progress has a `flatten` stage with slide counts. `ENGINE_FEATURES.flatten` is on.
+- Protected PDFs (forms, signatures, attachments, scripts, restrictions) are still refused, flattened or not.
+
 ### Engine: squeeze before splitting
 
 Splitting is now the last resort. In Chrome, all eight audit decks and that 24 MB Figma deck fit one email at both 20 MB and 25 MB. The Figma deck comes back as 13.9 MB for strict 20 MB mailboxes (no photo below 1680 px across the slide, most at 1920) and 17.3 MB for 25 MB ones (none below 1920, most at 2400). Before, it was two emails at 20 MB.

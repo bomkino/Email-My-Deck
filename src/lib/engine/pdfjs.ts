@@ -100,7 +100,8 @@ function createScorer(size: number): Scorer {
           for (const pending of slot.pending.values()) pending.reject(new Error('Flatten worker stopped.'))
           slot.pending.clear()
           slot.worker.terminate()
-          slots.splice(slots.indexOf(slot), 1)
+          const index = slots.indexOf(slot)
+          if (index >= 0) slots.splice(index, 1)
           while (waiting.length) waiting.shift()?.()
         }
         slots.push(slot)

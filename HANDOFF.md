@@ -63,7 +63,7 @@ npm run smoke                    real browser flow on the built site + origin pr
 | `PRIVACY.md` | Exact browser privacy boundary and its limits |
 | `CLOUDFLARE.md` | How the pitch.dog page and the optional standalone build are deployed |
 | `PROVENANCE.md` | Engine versions, build hashes, and source obligations |
-| `THIRD-PARTY-LICENSES.md` | QPDF and wrapper license notes |
+| `THIRD-PARTY-LICENSES.md` | QPDF, PDF.js and wrapper license notes |
 | `scripts/generate-corpus.mjs` | Synthetic test-deck generation |
 | `scripts/smoke.mjs` | Browser smoke/privacy test |
 | `scripts/engine-check.mjs` | Built engine on the corpus in Chromium |
@@ -71,6 +71,8 @@ npm run smoke                    real browser flow on the built site + origin pr
 | `src/ui/copy.ts` | Every string the tool shows |
 | `src/lib/engine/engine.ts` | Compression order, image ladder and verification |
 | `src/lib/engine/split.ts` | Measured page-range splitting |
+| `src/lib/engine/flatten.ts` | Flatten (the nuke): rung choice, image-only PDF, verification |
+| `src/lib/engine/pdfjs.ts`, `src/lib/engine/flatpage.ts`, `src/lib/engine/perceptual.ts` | Drawing slides with PDF.js, re-saving them, and scoring clarity |
 | `src/lib/engine/protocol.ts` | Messages between the page and the worker |
 | `src/workers/pdf.worker.ts` | Worker boundary and job flow |
 

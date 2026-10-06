@@ -22,6 +22,19 @@ rmSync(join(outDir, '_headers'), { force: true })
 
 mkdirSync(join(outDir, 'licenses'), { recursive: true })
 for (const file of ['LICENSE', 'THIRD-PARTY-LICENSES.md', 'PROVENANCE.md']) copyFileSync(file, join(outDir, 'licenses', file))
+// PDF.js and the data files it ships with (fonts, CMaps, decoders) keep their own notices.
+const pdfjs = 'node_modules/pdfjs-dist'
+mkdirSync(join(outDir, 'licenses', 'pdfjs'), { recursive: true })
+for (const [from, to] of [
+  ['LICENSE', 'LICENSE'],
+  ['standard_fonts/LICENSE_FOXIT', 'LICENSE_FOXIT'],
+  ['standard_fonts/LICENSE_LIBERATION', 'LICENSE_LIBERATION'],
+  ['cmaps/LICENSE', 'LICENSE_CMAPS'],
+  ['wasm/LICENSE_OPENJPEG', 'LICENSE_OPENJPEG'],
+  ['wasm/LICENSE_PDFJS_OPENJPEG', 'LICENSE_PDFJS_OPENJPEG'],
+  ['wasm/LICENSE_JBIG2', 'LICENSE_JBIG2'],
+  ['wasm/LICENSE_PDFJS_JBIG2', 'LICENSE_PDFJS_JBIG2'],
+]) copyFileSync(join(pdfjs, from), join(outDir, 'licenses', 'pdfjs', to))
 
 writeFileSync(join(outDir, 'BUILD.json'), `${JSON.stringify({
   source: 'https://github.com/bomkino/Email-My-Deck',
