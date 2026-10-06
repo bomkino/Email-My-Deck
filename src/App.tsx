@@ -33,13 +33,19 @@ function weightsFor(deck: number, profileId: TargetProfileId, profile: TargetPro
   }
 }
 
-/** The lightest single file the engine reached, measured or predicted. */
-function lightestOf(outcome: CompressionOutcome): { bytes: number; estimated: boolean } {
+/**
+ * The lightest single file the engine reached. `bytes` may be a prediction
+ * (`estimated`); `measured` is the lightest file it actually built.
+ */
+function lightestOf(outcome: CompressionOutcome): { bytes: number; estimated: boolean; measured: number } {
   let lightest = { bytes: outcome.receipt?.outputBytes ?? outcome.candidate.bytes.byteLength, estimated: false }
+  let measured = lightest.bytes
   for (const attempt of outcome.receipt?.attempts ?? []) {
-    if (attempt.bytes > 0 && attempt.bytes < lightest.bytes) lightest = { bytes: attempt.bytes, estimated: Boolean(attempt.predicted) }
+    if (!(attempt.bytes > 0)) continue
+    if (attempt.bytes < lightest.bytes) lightest = { bytes: attempt.bytes, estimated: Boolean(attempt.predicted) }
+    if (!attempt.predicted) measured = Math.min(measured, attempt.bytes)
   }
-  return lightest
+  return { ...lightest, measured }
 }
 
 function browserCanRunEngine(): boolean {
@@ -446,11 +452,12 @@ function CantFit({ file, parts, outcome, profileId, weights, headingRef, onGmail
   const [copied, setCopied] = useState<'idle' | 'done' | 'failed'>('idle')
   const name = deckName(file.name)
   const reason = outcome?.splitReason
-  const lightest = outcome ? lightestOf(outcome) : { bytes: file.size, estimated: false }
+  const lightest = outcome ? lightestOf(outcome) : { bytes: file.size, estimated: false, measured: file.size }
   const lightestText = `${lightest.estimated ? 'about ' : ''}${formatSize(lightest.bytes)}`
-  // Worth a second run only if the lightest version would clear Gmail's bigger allowance.
+  // Worth a second run only if a file we actually built would clear Gmail's
+  // bigger allowance. A prediction alone could send them round in a circle.
   const gmailBudget = TARGET_PROFILES['gmail-advanced'].recommendedRawBytes
-  const tryGmail = profileId !== 'gmail-advanced' && reason !== 'browser-cannot-resize' && weights.budget < gmailBudget && lightest.bytes <= gmailBudget
+  const tryGmail = profileId !== 'gmail-advanced' && reason !== 'browser-cannot-resize' && weights.budget < gmailBudget && lightest.measured <= gmailBudget
   const plan = parts.map((part, index) => `Email ${index + 1} of ${parts.length}\nSubject: ${splitCopy.subject(name, index + 1, parts.length)}\nAttach: ${part.name}\n\n${splitCopy.emailBody(name, index + 1, parts.length, part.startPage, part.endPage)}`).join('\n—\n\n')
   const downloadAll = () => parts.forEach((part, index) => window.setTimeout(() => download(part.bytes, part.name), index * 450))
   // The page's send-a-link guide, when the page around the tool has one.
@@ -460,7 +467,7 @@ function CantFit({ file, parts, outcome, profileId, weights, headingRef, onGmail
     <h2 id="emd-split-title" ref={headingRef} tabIndex={-1} data-pd-type="heading.subsection">{cantFitCopy.title}</h2>
     <p className="ready-lede" data-pd-type="body.default">{cantFitCopy.reason(reason, lightestText, weights)}</p>
     <p data-pd-type="body.default">{cantFitCopy.ways}</p>
-    {tryGmail && <p className="ready-alt" data-pd-type="body.small">{cantFitCopy.gmailHint(lightestText)} <button className="text-button" type="button" onClick={onGmail}>{cantFitCopy.gmailAction}</button></p>}
+    {tryGmail && <p className="ready-alt" data-pd-type="body.small">{cantFitCopy.gmailHint} <button className="text-button" type="button" onClick={onGmail}>{cantFitCopy.gmailAction}</button></p>}
 
     <div className="way way--pick">
       <h3 className="way-title" data-pd-type="title.card">{cantFitCopy.linkTitle}<em className="badge">{cantFitCopy.linkBadge}</em></h3>
