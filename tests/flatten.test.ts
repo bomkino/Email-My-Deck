@@ -102,7 +102,7 @@ function stubRasterizer(pageCount: number, boxes: Array<[number, number, number,
       const versions = FLATTEN_RUNGS.map((rung, step) => {
         const width = Math.round(rung.longEdgePx / 10)
         const height = Math.round(width * 0.5625)
-        return { bytes: photoJpeg(width, height, index + 1, Math.round(rung.jpegQuality * 100)), width, height, clarity: 1 - step * 0.04 }
+        return { bytes: photoJpeg(width, height, index + 1, Math.round(rung.jpegQuality * 100)), width, height, clarity: 1 - step * 0.04, rung: step }
       })
       return { box: boxes[index], rotate: rotate[index] ?? 0, versions }
     },
@@ -165,6 +165,24 @@ describe('flattening a deck', () => {
     // 1 - 7 × 0.04 is below the floor, so the lightest usable rung is the one above it.
     expect(result.flatten!.clarity).toBeGreaterThanOrEqual(0.7)
     expect(toOutcome(result, input.byteLength, getTargetProfile('strict-20'), 2_000).fits).toBe(false)
+  })
+
+  it('takes a second encoder\'s version where it reads as clearly for fewer bytes, and reports its rung', async () => {
+    const input = await textDeck(3)
+    const stub = stubRasterizer(3, boxes)
+    // Each rung also has a twin that is 30% lighter and just as clear, as a better encoder would write.
+    const twins = async (bytes: Uint8Array): Promise<PageRasterizer> => {
+      const rasterizer = await stub(bytes)
+      return { ...rasterizer, page: async (index, rungs) => {
+        const page = await rasterizer.page(index, rungs)
+        const versions = page.versions.flatMap((version) => [version, { ...version, bytes: version.bytes.slice(0, Math.round(version.bytes.byteLength * 0.7)) }])
+        return { ...page, versions }
+      } }
+    }
+    const plain = await flattenDocument(input, 10_000_000, { qpdf: nodeQpdf, rasterizer: stub })
+    const twinned = await flattenDocument(input, 10_000_000, { qpdf: nodeQpdf, rasterizer: twins })
+    expect(twinned.bytes.byteLength).toBeLessThan(plain.bytes.byteLength)
+    expect(twinned.flatten).toEqual({ pages: 3, longEdgePx: 2400, jpegQuality: 82, clarity: 1 })
   })
 
   it('keeps rotated pages rotated', async () => {
