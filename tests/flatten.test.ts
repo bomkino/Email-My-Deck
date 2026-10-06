@@ -189,9 +189,10 @@ describe('flattening a deck', () => {
     const flatten = events.filter((event) => event.stage === 'flatten')
     // The second slide finishes at once; the first takes 1.3 s. Meanwhile the bar hears every 400 ms, creeping forward.
     const waiting = flatten.slice(flatten.findIndex((event) => event.page === 1), flatten.findIndex((event) => event.page === 2))
-    const beats = waiting.filter((event) => event.page === undefined)
-    expect(beats.length).toBeGreaterThanOrEqual(2)
-    expect(beats.at(-1)!.fraction).toBeGreaterThan(waiting[0].fraction)
+    expect(waiting.length).toBeGreaterThanOrEqual(3)
+    expect(waiting.at(-1)!.fraction).toBeGreaterThan(waiting[0].fraction)
+    // Every beat still says which slide it's on, so the words under the bar hold steady.
+    expect(waiting.every((event) => event.page === 1 && event.pages === 2)).toBe(true)
   })
 
   it('refuses when the renderer sees a different number of pages', async () => {

@@ -48,6 +48,8 @@ export class ProgressReporter {
   private stage: EngineStage = 'inspect'
   private label = STAGE_LABELS.inspect
   private lastEmit = -Infinity
+  /** The slide count last reported in this stage, repeated until the stage changes so the words don't flicker. */
+  private slide: { page?: number; pages?: number } = {}
 
   constructor(emit: (event: ProgressEvent) => void, start = 0, now: () => number = () => performance.now()) {
     this.emitFn = emit
@@ -64,7 +66,8 @@ export class ProgressReporter {
     this.label = label
     // A later request in the same job may start below this stage's usual band.
     this.band = [Math.max(band[0], this.value), Math.max(band[1], this.value)]
-    this.push(0, {}, true)
+    this.slide = {}
+    this.push(0, true)
   }
 
   /** Change what the current stage is called without restarting its share of the bar. */
@@ -72,21 +75,24 @@ export class ProgressReporter {
     if (stage === this.stage && label === this.label) return
     this.stage = stage
     this.label = label
-    this.push(0, {}, true)
+    this.slide = {}
+    this.push(0, true)
   }
 
   /** Report progress within the current stage (0..1). */
   update(within: number, extra: { page?: number; pages?: number; label?: string } = {}): void {
     if (extra.label) this.label = extra.label
-    this.push(within, extra, false)
+    if (extra.page !== undefined) this.slide.page = extra.page
+    if (extra.pages !== undefined) this.slide.pages = extra.pages
+    this.push(within, false)
   }
 
   /** Say the job is still going, without moving the bar: for waits that report nothing themselves. */
   keepAlive(): void {
-    this.push(0, {}, false)
+    this.push(0, false)
   }
 
-  private push(within: number, extra: { page?: number; pages?: number }, force: boolean): void {
+  private push(within: number, force: boolean): void {
     const clamped = Math.min(1, Math.max(0, Number.isFinite(within) ? within : 0))
     const next = this.band[0] + (this.band[1] - this.band[0]) * clamped
     if (next > this.value) this.value = next
@@ -94,8 +100,8 @@ export class ProgressReporter {
     if (!force && time - this.lastEmit < MIN_INTERVAL_MS) return
     this.lastEmit = time
     const event: ProgressEvent = { stage: this.stage, label: this.label, fraction: Math.round(this.value * 1000) / 1000 }
-    if (extra.page !== undefined) event.page = extra.page
-    if (extra.pages !== undefined) event.pages = extra.pages
+    if (this.slide.page !== undefined) event.page = this.slide.page
+    if (this.slide.pages !== undefined) event.pages = this.slide.pages
     this.emitFn(event)
   }
 }
