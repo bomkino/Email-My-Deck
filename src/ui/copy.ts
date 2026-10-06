@@ -56,7 +56,7 @@ export const mailboxCopy: Record<TargetProfileId, { label: string; detail: (budg
 export const mailboxWhy =
   'Mail systems weigh the whole email, after your file has been packed for the trip. Packing adds roughly a third, so we aim below the limit and leave room for your message.'
 
-export type StageKey = 'read' | 'tidy' | 'photos' | 'resize' | 'verify' | 'split' | 'work'
+export type StageKey = 'read' | 'tidy' | 'photos' | 'resize' | 'verify' | 'split' | 'flatten' | 'work'
 
 // The real step, next to the percentage. Plain on purpose: the curve balls
 // below take turns with it, and this is the line that says nothing's stuck.
@@ -67,6 +67,7 @@ export const stageCopy: Record<StageKey, string> = {
   resize: 'Resizing oversized photos',
   verify: 'Counting every slide back in',
   split: 'Splitting it into emails',
+  flatten: 'Turning slides into pictures',
   work: 'Trying versions until one fits',
 }
 
@@ -81,6 +82,7 @@ export function stageFor(label: string, stage?: unknown): StageKey | null {
   const text = label.toLowerCase()
   if (!text) return null
   if (/split|part/.test(text)) return 'split'
+  if (/flatten|render/.test(text)) return 'flatten'
   if (/strong|ghostscript|downsampl|resiz|resampl/.test(text)) return 'resize'
   if (/check|verif|measur|ready to/.test(text)) return 'verify'
   if (/image|photo|jpeg|recompress/.test(text)) return 'photos'
@@ -102,6 +104,7 @@ export const idleCopy = {
 export const busyCopy = {
   eyebrow: 'Working on this device',
   splittingTitle: 'Packing it into parts.',
+  flatteningTitle: 'Flattening it.',
   workingTitle: 'Making it fit.',
   cancel: 'Cancel',
   commentaryEyebrow: 'Meanwhile',
@@ -122,7 +125,7 @@ export const waitFor = (elapsed: number) => [...busyCopy.waits].reverse().find((
 // Loading-screen commentary: our kind of funny about whatever is happening
 // right now. No advice. The card switches to the current step's lines as the
 // engine moves on, then wanders into the general ones. Exactly one dog fact.
-export type CommentaryKey = 'read' | 'tidy' | 'photos' | 'verify' | 'split' | 'any'
+export type CommentaryKey = 'read' | 'tidy' | 'photos' | 'verify' | 'split' | 'flatten' | 'any'
 
 export const commentary: Record<CommentaryKey, string[]> = {
   read: [
@@ -144,9 +147,13 @@ export const commentary: Record<CommentaryKey, string[]> = {
     'Same slides, same order, same page sizes. Checking anyway. We’re like that.',
   ],
   split: [
-    'One email can’t carry all of this without squashing it, so we’re packing a set of parts, just in case.',
     'Splitting between slides, never through one. Nobody gets cut in half.',
-    'Parts are plan B. Plan A is waiting on the next screen.',
+    'Each part packs its own fonts, so no slide opens in the wrong typeface.',
+    'Every part gets weighed on the way out. Guesses don’t go in the post.',
+  ],
+  flatten: [
+    'Every slide is having its portrait taken. Hold still.',
+    'Your text is about to become a picture of text. It won’t notice. Search will.',
   ],
   any: [
     'Your deck has no idea any of this is happening. Best not to tell it.',
@@ -186,6 +193,10 @@ export const curveBalls: Record<CommentaryKey, string[]> = {
     'Buying a second suitcase',
     'Deciding who sits with who',
   ],
+  flatten: [
+    'Saying cheese',
+    'Laminating the slides',
+  ],
   any: [
     'Still not uploading anything',
     'Making this look easy',
@@ -198,7 +209,7 @@ export const curveBalls: Record<CommentaryKey, string[]> = {
 export const dogFact = 'Dog fact: no two dogs have the same nose print. It works like a fingerprint. (Nothing to do with decks. You looked like you needed a break.)'
 
 export const commentaryKeyFor = (stage: StageKey | null): CommentaryKey =>
-  stage === 'read' || stage === 'tidy' || stage === 'photos' || stage === 'verify' || stage === 'split' ? stage : stage === 'resize' ? 'photos' : 'any'
+  stage === 'read' || stage === 'tidy' || stage === 'photos' || stage === 'verify' || stage === 'split' || stage === 'flatten' ? stage : stage === 'resize' ? 'photos' : 'any'
 
 export const readyCopy = {
   eyebrow: 'Checked on this device',
@@ -216,6 +227,12 @@ export const readyCopy = {
     if (weighInFor(weights) === 'looks-like-it-fits') return `${formatSize(weights.deck)} looked like it would fit ${weights.mailbox}, but with your message the email would have come to about ${formatSize(weights.email)}. Here’s what we changed to get it in:`
     return `As an email it would have weighed about ${formatSize(weights.email)}. Here’s what we changed to get it in:`
   },
+  // Above the receipt of a flattened deck.
+  flattened: (weights: Weights) => weights.conditional
+    ? 'Flattened, it fits what Gmail to Gmail takes. Here’s what that changed:'
+    : `Flattened, it fits ${weights.mailbox}. Here’s what that changed:`,
+  rather: 'Rather keep the text and links?',
+  ratherAction: 'See the other ways',
   stamp: 'Fits',
   stampFits: 'Already fits',
   download: 'Download email version',
@@ -250,8 +267,19 @@ export function whatWeDid({ candidate, receipt }: ReceiptLike): string[] {
   return lines
 }
 
-// When one email can't carry it. Say so plainly, say why, then give two
-// ways out: a link keeps the deck whole, parts keep it in the inbox.
+// The receipt of a flattened deck: what it cost, said as plainly as what it saved.
+export function whatFlatteningDid(flatten: { pages: number; longEdgePx?: number } | undefined, pages: number): string[] {
+  const slides = flatten?.pages ?? pages
+  const across = flatten?.longEdgePx ? `, ${flatten.longEdgePx.toLocaleString('en')} pixels across` : ''
+  return [
+    `Turned ${slides === 1 ? 'the slide' : `all ${slides} slides`} into pictures${across}.`,
+    'Text can’t be selected or searched now, and links won’t click.',
+  ]
+}
+
+// When one email can't carry it. Say so plainly, say why, then give three
+// ways out: a link keeps the deck whole, parts keep it in the inbox, and
+// flattening keeps it in one file at a cost we spell out before anyone pays it.
 export const cantFitCopy = {
   eyebrow: 'Too big for one email',
   title: 'We can’t get this one into a single email.',
@@ -263,19 +291,45 @@ export const cantFitCopy = {
     if (reason === 'quality-floor') return `The lightest we can make it without blurring your slides is ${lightest}. ${takes} Getting the rest off would mean blurry photos, and nobody should have to squint at your deck.`
     return `The lightest we can make it is ${lightest}. ${takes}`
   },
-  ways: 'So you may have to split it. Or keep it whole and send a link.',
+  ways: (count: number) => `${count === 3 ? 'Three' : 'Two'} ways to send it anyway:`,
   linkTitle: 'Send one link',
   linkBadge: 'Our pick',
   linkBody: 'Your whole deck, full quality, in one piece. Put it on a free file-sharing service and email the link instead of the file.',
   linkMore: 'How to send it by link, for free',
-  partsTitle: (count: number) => `Or send it in ${count} emails`,
-  partsBody: (count: number, mailbox: string) => `Every slide stays sharp, and each part fits ${mailbox}. Your recipient gets ${count} emails and opens them in order.`,
+  partsTitle: (count: number) => `Split it into ${count} emails`,
+  partsBody: 'Every slide stays sharp, and every link still works. The catch: your recipient gets more than one email and has to open them in order.',
+  partsEven: (count: number) => count === 2
+    ? 'We’ve set it to two halves of about the same size. Move it so the split lands between sections, not mid-story.'
+    : `We’ve set it to ${count} parts of about the same size. Move the splits so they land between sections, not mid-story.`,
+  breakLabel: (index: number, count: number) => count === 2 ? 'Split after slide' : `Email ${index} ends after slide`,
+  partLine: (index: number, start: number, end: number) => `Email ${index} · ${start === end ? `slide ${start}` : `slides ${start}–${end}`}`,
+  partOver: 'too big',
+  partsOver: (index: number, budget: string) => `Email ${index} comes to more than ${budget}. Move a split so it carries fewer slides.`,
+  splitHere: 'Split it here',
+  splitForMe: 'Split it for me',
+  flattenTitle: 'Flatten it',
+  flattenBadge: 'Last resort',
+  flattenBody: 'We turn every slide into a single picture, then squeeze the pictures. It stays one file and looks much the same on a screen. What it costs:',
+  flattenCosts: [
+    'Text can’t be selected, searched or copied.',
+    'Links stop working.',
+    'Small type goes a little soft.',
+  ],
+  flattenMaybe: 'It might still be too big. If it is, we’ll say so, and the other two ways will be right here.',
+  flattenAction: 'Flatten it and try',
+  // After a flatten that still didn't fit.
+  flattenMiss: (lightest: string, weights: Weights) => `We tried. Even flattened, the lightest we can make it is ${lightest}, and ${weights.mailbox} takes decks up to ${formatSize(weights.budget)}. Some decks are simply too much deck for one email. A link or a split will carry it.`,
   gmailHint: 'Sending from Gmail to Gmail or Google Workspace? Gmail takes a little more, so it may fit in one.',
   gmailAction: 'Try Gmail to Gmail',
 }
 
 export const splitCopy = {
-  downloadAll: (count: number) => `Download all ${count}`,
+  eyebrow: (count: number) => `Split into ${count} emails`,
+  title: 'Your deck, in parts.',
+  body: (count: number, mailbox: string) => `Each part fits ${mailbox}. Send ${count === 2 ? 'both' : `all ${count}`} in order, and mention there’s more than one.`,
+  partOver: (budget: string) => `Over ${budget}. Move the split and try again.`,
+  change: 'Change where it splits',
+  downloadAll: (count: number) => count === 2 ? 'Download both' : `Download all ${count}`,
   download: 'Download',
   planTitle: 'Your email plan',
   planIntro: 'Send them in order. Here’s everything to paste:',
@@ -284,7 +338,7 @@ export const splitCopy = {
   copyFailed: 'Your browser blocked copying. Select the text and copy it yourself.',
   subject: (deck: string, index: number, total: number) => `${deck} (part ${index} of ${total})`,
   emailBody: (deck: string, index: number, total: number, start: number, end: number) =>
-    `Hi,\n\nI’m sending ${deck} in ${total} parts so every slide stays sharp. This is part ${index} of ${total} (${start === end ? `page ${start}` : `pages ${start}–${end}`}).\n\n`,
+    `Hi,\n\nI’m sending ${deck} in ${total} parts so every slide stays sharp. This is part ${index} of ${total} (${start === end ? `slide ${start}` : `slides ${start}–${end}`}).\n\n`,
 }
 
 export type ErrorKind = 'not-pdf' | 'damaged' | 'too-big' | 'timeout' | 'password' | 'restricted' | 'protected' | 'page-too-large' | 'engine' | 'read' | 'unknown'

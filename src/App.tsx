@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CompressionOutcome } from './lib/compression'
+import { ENGINE_FEATURES } from './lib/engine/protocol'
+import type { SplitPlan } from './lib/engine/split'
 import { emailVersionName } from './lib/filename'
 import { estimatedMessageBytes, getTargetProfile, rawBudgetBytes, TARGET_PROFILES, type TargetProfile, type TargetProfileId } from './lib/profiles'
 import {
   busyCopy, cantFitCopy, errorCopy, errorKindFor, idleCopy, mailboxCopy, mailboxName, mailboxWhy, pageTooLargeTitle, protectedCopy, readyCopy, splitCopy,
-  stageCopy, stageFor, unsupportedCopy, waitFor, weighInLine, whatWeDid, type ErrorKind, type Weights,
+  stageCopy, stageFor, unsupportedCopy, waitFor, weighInLine, whatFlatteningDid, whatWeDid, type ErrorKind, type Weights,
 } from './ui/copy'
 import { deckName, formatElapsed, formatSize, percentLighter } from './ui/format'
 import { DeckStack, Icon, Meter, Stamp, TipCard, useElapsed, useSmoothProgress, useStatusLine } from './ui/pieces'
 
-type Stage = 'idle' | 'reading' | 'compressing' | 'splitting' | 'ready' | 'split' | 'error' | 'unsupported'
-type SplitPart = { bytes: Uint8Array; name: string; startPage: number; endPage: number }
+type Stage = 'idle' | 'reading' | 'compressing' | 'splitting' | 'flattening' | 'ready' | 'cant-fit' | 'split' | 'error' | 'unsupported'
+type Job = 'compress' | 'split' | 'flatten'
+type SplitPart = { bytes: Uint8Array; name: string; startPage: number; endPage: number; fits?: boolean }
 type Progress = { label: string; fraction: number; stage?: unknown; page?: number; pages?: number }
 type ErrorState = { kind: ErrorKind; detail: string; reason?: string; page?: number }
 
@@ -48,6 +51,59 @@ function lightestOf(outcome: CompressionOutcome): { bytes: number; estimated: bo
   return { ...lightest, measured }
 }
 
+/** The engine's per-page weights for the version that didn't fit, when it sent them. */
+function splitPlanOf(outcome: CompressionOutcome): SplitPlan | null {
+  const plan = outcome.splitPlan
+  if (!plan || !Array.isArray(plan.pageBytes) || plan.pageBytes.length < 2) return null
+  return plan
+}
+
+/** Estimated size of the part holding slides start..end (1-based, inclusive). */
+function partEstimate(plan: SplitPlan, start: number, end: number): number {
+  let total = plan.sharedBytes
+  for (let page = start; page <= end; page += 1) total += plan.pageBytes[page - 1] ?? 0
+  return total
+}
+
+/** Page ranges for breaks after the given slides. */
+function rangesFor(breaks: number[], pages: number): Array<[number, number]> {
+  const edges = [0, ...breaks, pages]
+  return edges.slice(1).map((end, index) => [edges[index] + 1, end])
+}
+
+/** The fewest parts that each come in under budget, packing slides in order. */
+function fewestParts(plan: SplitPlan, budget: number): number {
+  let parts = 1
+  let start = 1
+  for (let page = 1; page <= plan.pageBytes.length; page += 1) {
+    if (page > start && partEstimate(plan, start, page) > budget) {
+      parts += 1
+      start = page
+    }
+  }
+  return Math.max(2, parts)
+}
+
+/** Breaks that give `parts` parts of about the same size. */
+function evenBreaks(plan: SplitPlan, parts: number): number[] {
+  const pages = plan.pageBytes.length
+  const total = plan.pageBytes.reduce((sum, bytes) => sum + bytes, 0)
+  const breaks: number[] = []
+  let running = 0
+  for (let page = 1; page < pages && breaks.length < parts - 1; page += 1) {
+    const target = (total * (breaks.length + 1)) / parts
+    const before = running
+    running += plan.pageBytes[page - 1]
+    if (running >= target) {
+      // Break where the running total lands nearer the target, leaving room for the slides still to place.
+      const pick = target - before < running - target && page - 1 > (breaks.at(-1) ?? 0) ? page - 1 : page
+      breaks.push(Math.min(pick, pages - (parts - 1 - breaks.length)))
+    }
+  }
+  while (breaks.length < parts - 1) breaks.push(Math.min(pages - 1, (breaks.at(-1) ?? 0) + 1))
+  return breaks
+}
+
 function browserCanRunEngine(): boolean {
   return typeof WebAssembly === 'object' && typeof Worker === 'function' && typeof Blob !== 'undefined' && typeof Blob.prototype.arrayBuffer === 'function' && typeof URL.createObjectURL === 'function'
 }
@@ -81,6 +137,7 @@ export default function App() {
   const workerRef = useRef<Worker | null>(null)
   const activeFileRef = useRef<File | null>(null)
   const jobIdRef = useRef(0)
+  const jobRef = useRef<Job>('compress')
   const dragDepthRef = useRef(0)
   const [stage, setStage] = useState<Stage>(() => browserCanRunEngine() ? 'idle' : 'unsupported')
   const [file, setFile] = useState<File | null>(null)
@@ -88,6 +145,10 @@ export default function App() {
   const [customMessageMB, setCustomMessageMB] = useState(25)
   const [progress, setProgress] = useState<Progress>({ label: '', fraction: 0 })
   const [outcome, setOutcome] = useState<CompressionOutcome | null>(null)
+  // The lightest single file, kept while the visitor picks a way to send it.
+  const [cantFit, setCantFit] = useState<CompressionOutcome | null>(null)
+  const [flattenMiss, setFlattenMiss] = useState<CompressionOutcome | null>(null)
+  const [breaks, setBreaks] = useState<number[]>([])
   const [parts, setParts] = useState<SplitPart[]>([])
   const [error, setError] = useState<ErrorState | null>(null)
   const [hoveringZone, setHoveringZone] = useState(false)
@@ -96,7 +157,7 @@ export default function App() {
   const [announcement, setAnnouncement] = useState('')
 
   const profile = useMemo(() => getTargetProfile(profileId, customMessageMB), [profileId, customMessageMB])
-  const isBusy = stage === 'reading' || stage === 'compressing' || stage === 'splitting'
+  const isBusy = stage === 'reading' || stage === 'compressing' || stage === 'splitting' || stage === 'flattening'
 
   const clearJobTimeout = useCallback(() => {
     if (jobTimeoutRef.current !== null) {
@@ -158,32 +219,33 @@ export default function App() {
       }
       if (message.type === 'compress-result') {
         const next = message.outcome as CompressionOutcome
-        setOutcome(next)
+        clearJobTimeout()
+        setProgress({ label: '', fraction: 1 })
         if (next.fits ?? next.candidate.bytes.byteLength <= next.targetBytes) {
-          clearJobTimeout()
-          setProgress({ label: '', fraction: 1 })
+          setOutcome(next)
           setStage('ready')
+        } else if (jobRef.current === 'flatten') {
+          setFlattenMiss(next)
+          setStage('cant-fit')
         } else {
-          // Engines without autoSplit hand the split back to us. The bar stays
-          // where the engine left it.
-          armWatchdog(jobId)
-          setStage('splitting')
-          setProgress((current) => ({ ...current, label: '', stage: 'split', page: undefined, pages: undefined }))
-          worker.postMessage({ type: 'split', jobId, bytes: next.candidate.bytes, maxPartBytes: next.targetBytes }, [next.candidate.bytes.buffer])
+          // Nothing is split until the visitor picks a way to send it.
+          setCantFit(next)
+          setFlattenMiss(null)
+          setBreaks([])
+          setStage('cant-fit')
         }
         return
       }
       if (message.type === 'split-result') {
         clearJobTimeout()
-        if (message.outcome) setOutcome(message.outcome as CompressionOutcome)
         const source = activeFileRef.current
-        const rawParts = message.parts as Array<{ bytes: Uint8Array; pages: number; startPage?: number; endPage?: number }>
+        const rawParts = message.parts as Array<{ bytes: Uint8Array; pages: number; startPage?: number; endPage?: number; fits?: boolean }>
         let nextPage = 1
         setParts(rawParts.map((part, index) => {
           const startPage = positive(part.startPage) ?? nextPage
           const endPage = positive(part.endPage) ?? startPage + part.pages - 1
           nextPage = endPage + 1
-          return { bytes: part.bytes, name: emailVersionName(source?.name ?? 'deck.pdf', { index: index + 1, total: rawParts.length }), startPage, endPage }
+          return { bytes: part.bytes, name: emailVersionName(source?.name ?? 'deck.pdf', { index: index + 1, total: rawParts.length }), startPage, endPage, fits: typeof part.fits === 'boolean' ? part.fits : undefined }
         }))
         setProgress({ label: '', fraction: 1 })
         setStage('split')
@@ -208,6 +270,9 @@ export default function App() {
     setFile(null)
     activeFileRef.current = null
     setOutcome(null)
+    setCantFit(null)
+    setFlattenMiss(null)
+    setBreaks([])
     setParts([])
     setError(null)
     setProgress({ label: '', fraction: 0 })
@@ -229,10 +294,14 @@ export default function App() {
     }
     activeFileRef.current = next
     const jobId = ++jobIdRef.current
+    jobRef.current = 'compress'
     armWatchdog(jobId)
     setFile(next)
     setError(null)
     setOutcome(null)
+    setCantFit(null)
+    setFlattenMiss(null)
+    setBreaks([])
     setParts([])
     setStage('reading')
     setProgress({ label: 'Reading this file locally', fraction: 0.06, stage: 'read' })
@@ -243,15 +312,62 @@ export default function App() {
       next.arrayBuffer().then((buffer) => {
         if (jobId !== jobIdRef.current || workerRef.current !== worker) return
         setProgress((current) => ({ ...current, fraction: Math.max(current.fraction, 0.14) }))
-        // autoSplit asks engines that support it to split in the same job, so
-        // progress stays continuous. Older engines ignore it.
-        worker.postMessage({ type: 'compress', jobId, bytes: new Uint8Array(buffer), profileId: requestedProfileId, customMessageMB: requestedCustomMessageMB, autoSplit: true }, [buffer])
+        // No autoSplit: when it can't fit, the visitor chooses what happens next.
+        worker.postMessage({ type: 'compress', jobId, bytes: new Uint8Array(buffer), profileId: requestedProfileId, customMessageMB: requestedCustomMessageMB, autoSplit: false }, [buffer])
       }).catch(() => {
         if (jobId !== jobIdRef.current) return
         fail('The file could not be read in this browser.', 'read')
       })
     }, 0)
   }, [profileId, customMessageMB, stage, armWatchdog, fail])
+
+  // Split the lightest version, after the slides the visitor picked (or
+  // wherever fits, when the engine sent no per-page weights).
+  const split = useCallback((breakAfter?: number[]) => {
+    const worker = workerRef.current
+    if (!worker || !cantFit) return
+    const jobId = ++jobIdRef.current
+    jobRef.current = 'split'
+    armWatchdog(jobId)
+    if (breakAfter) setBreaks(breakAfter)
+    setStage('splitting')
+    setProgress({ label: '', fraction: 0, stage: 'split' })
+    // A copy goes to the engine, so the visitor can come back and split it differently.
+    const bytes = cantFit.candidate.bytes.slice()
+    worker.postMessage({ type: 'split', jobId, bytes, maxPartBytes: cantFit.targetBytes, breakAfter }, [bytes.buffer])
+  }, [cantFit, armWatchdog])
+
+  // Pages become pictures, then get squeezed. Starts from the original file.
+  const flatten = useCallback(() => {
+    const worker = workerRef.current
+    const source = activeFileRef.current
+    if (!worker || !source) return
+    const jobId = ++jobIdRef.current
+    jobRef.current = 'flatten'
+    armWatchdog(jobId)
+    setStage('flattening')
+    setProgress({ label: '', fraction: 0.02, stage: 'flatten' })
+    source.arrayBuffer().then((buffer) => {
+      if (jobId !== jobIdRef.current || workerRef.current !== worker) return
+      worker.postMessage({ type: 'compress', jobId, bytes: new Uint8Array(buffer), profileId, customMessageMB, mode: 'flatten' }, [buffer])
+    }).catch(() => {
+      if (jobId !== jobIdRef.current) return
+      fail('The file could not be read in this browser.', 'read')
+    })
+  }, [profileId, customMessageMB, armWatchdog, fail])
+
+  // Back to the three ways. Stops a split or flatten that's still running.
+  const backToWays = useCallback(() => {
+    jobIdRef.current += 1
+    clearJobTimeout()
+    if (stage === 'splitting' || stage === 'flattening') {
+      workerRef.current?.terminate()
+      workerRef.current = null
+      setWorkerNonce((nonce) => nonce + 1)
+    }
+    setProgress({ label: '', fraction: 0 })
+    setStage('cant-fit')
+  }, [stage, clearJobTimeout])
 
   // Drop anywhere on the page. Without this, a near-miss opens the PDF in the
   // tab and the visitor loses the page.
@@ -313,18 +429,23 @@ export default function App() {
       <input ref={inputRef} className="sr-only" type="file" accept="application/pdf,.pdf" tabIndex={-1} aria-hidden="true" onChange={(event) => chooseFile(event.target.files?.[0])} />
       <MailboxPicker profileId={profileId} customMessageMB={customMessageMB} onChange={setProfileId} onCustomChange={setCustomMessageMB} />
     </>}
-    {isBusy && file && <Busy file={file} stage={stage} progress={progress} weights={weightsFor(file.size, profileId, profile)} headingRef={headingRef} onCancel={reset} />}
+    {isBusy && file && <Busy file={file} stage={stage} progress={progress} weights={weightsFor(file.size, profileId, profile)} headingRef={headingRef} onCancel={cantFit && (stage === 'splitting' || stage === 'flattening') ? backToWays : reset} />}
     {stage === 'ready' && file && outcome && <Ready
       file={file} outcome={outcome} profileId={profileId} weights={weightsFor(file.size, profileId, profile)} headingRef={headingRef}
       onStricter={() => { setProfileId('strict-20'); chooseFile(file, 'strict-20', customMessageMB) }}
+      onWays={cantFit ? backToWays : undefined}
       onReset={reset}
     />}
-    {stage === 'split' && file && <CantFit
-      file={file} parts={parts} outcome={outcome} profileId={profileId} weights={weightsFor(file.size, profileId, profile)} headingRef={headingRef}
+    {stage === 'cant-fit' && file && cantFit && <CantFit
+      outcome={cantFit} flattenMiss={flattenMiss} breaks={breaks} profileId={profileId} weights={weightsFor(file.size, profileId, profile)} headingRef={headingRef}
       onGmail={() => { setProfileId('gmail-advanced'); chooseFile(file, 'gmail-advanced', customMessageMB) }}
-      onReset={reset}
+      onSplit={split} onFlatten={flatten} onReset={reset}
     />}
-    {draggingPage && (stage === 'idle' || stage === 'error' || stage === 'ready' || stage === 'split') && <div className="drop-overlay" aria-hidden="true">
+    {stage === 'split' && file && <Parts
+      file={file} parts={parts} budget={cantFit?.targetBytes ?? 0} weights={weightsFor(file.size, profileId, profile)} headingRef={headingRef}
+      onWays={cantFit ? backToWays : undefined} onReset={reset}
+    />}
+    {draggingPage && (stage === 'idle' || stage === 'error' || stage === 'ready' || stage === 'cant-fit' || stage === 'split') && <div className="drop-overlay" aria-hidden="true">
       <div className="drop-overlay-card"><DeckStack label="your-deck.pdf" state="hover" /><strong data-pd-type="heading.subsection">{idleCopy.dropAnywhere}</strong><span data-pd-type="body.default">{idleCopy.dropAnywhereNote}</span></div>
     </div>}
   </div>
@@ -381,9 +502,9 @@ function MailboxPicker({ profileId, customMessageMB, onChange, onCustomChange }:
 function Busy({ file, stage, progress, weights, headingRef, onCancel }: { file: File; stage: Stage; progress: Progress; weights: Weights; headingRef: HeadingRef; onCancel: () => void }) {
   const shown = useSmoothProgress(progress.fraction, true)
   const elapsed = useElapsed(true)
-  const key = stage === 'splitting' ? 'split' : stageFor(progress.label, progress.stage)
+  const key = stage === 'splitting' ? 'split' : stageFor(progress.label, progress.stage) ?? (stage === 'flattening' ? 'flatten' : null)
   const words = key ? stageCopy[key] : progress.label || stageCopy.work
-  const label = progress.page && progress.pages && (key === 'photos' || key === 'split') ? `${words} · slide ${progress.page} of ${progress.pages}` : words
+  const label = progress.page && progress.pages && (key === 'photos' || key === 'split' || key === 'flatten') ? `${words} · slide ${progress.page} of ${progress.pages}` : words
   const percent = Math.round(shown * 100)
   const status = useStatusLine(key, label)
   return <section className="panel panel--busy" aria-busy="true" aria-labelledby="emd-busy-title">
@@ -393,8 +514,8 @@ function Busy({ file, stage, progress, weights, headingRef, onCancel }: { file: 
       <span data-pd-type="data">{formatSize(file.size)}</span>
     </div>
     <p className="eyebrow" data-pd-type="metadata"><span className="pulse-dot" aria-hidden="true" />{busyCopy.eyebrow}</p>
-    <h2 id="emd-busy-title" ref={headingRef} tabIndex={-1} data-pd-type="heading.subsection">{stage === 'splitting' ? busyCopy.splittingTitle : busyCopy.workingTitle}</h2>
-    <p className="busy-weigh" data-pd-type="body.default">{weighInLine(weights)}</p>
+    <h2 id="emd-busy-title" ref={headingRef} tabIndex={-1} data-pd-type="heading.subsection">{stage === 'splitting' ? busyCopy.splittingTitle : stage === 'flattening' ? busyCopy.flatteningTitle : busyCopy.workingTitle}</h2>
+    {stage !== 'splitting' && <p className="busy-weigh" data-pd-type="body.default">{weighInLine(weights)}</p>}
     <div className="progress" role="progressbar" aria-label="Progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} aria-valuetext={`${percent}%. ${label}`}>
       <span className="progress-fill" style={{ '--progress': shown } as React.CSSProperties} />
     </div>
@@ -405,13 +526,15 @@ function Busy({ file, stage, progress, weights, headingRef, onCancel }: { file: 
   </section>
 }
 
-function Ready({ file, outcome, profileId, weights, headingRef, onStricter, onReset }: { file: File; outcome: CompressionOutcome; profileId: TargetProfileId; weights: Weights; headingRef: HeadingRef; onStricter: () => void; onReset: () => void }) {
+function Ready({ file, outcome, profileId, weights, headingRef, onStricter, onWays, onReset }: { file: File; outcome: CompressionOutcome; profileId: TargetProfileId; weights: Weights; headingRef: HeadingRef; onStricter: () => void; onWays?: () => void; onReset: () => void }) {
   const [downloaded, setDownloaded] = useState(false)
   const untouched = outcome.candidate.engine === 'original'
+  const flattened = (outcome.candidate.engine as string) === 'flattened'
   const outputBytes = outcome.candidate.bytes.byteLength
   const outputName = emailVersionName(file.name)
   const lighter = percentLighter(file.size, outputBytes)
-  const did = untouched ? [] : whatWeDid(outcome)
+  const flatten = (outcome.receipt as CompressionOutcome['receipt'] & { flatten?: { pages: number; longEdgePx?: number } }).flatten
+  const did = untouched ? [] : flattened ? whatFlatteningDid(flatten, outcome.inspection.pages) : whatWeDid(outcome)
   const save = () => { download(outcome.candidate.bytes, outputName); setDownloaded(true) }
   return <section className="panel panel--ready" aria-labelledby="emd-ready-title">
     <div className="ready-top">
@@ -422,7 +545,7 @@ function Ready({ file, outcome, profileId, weights, headingRef, onStricter, onRe
     <h2 id="emd-ready-title" ref={headingRef} tabIndex={-1} data-pd-type="heading.subsection">{untouched ? readyCopy.fitsTitle : readyCopy.title}</h2>
     {untouched
       ? <p className="ready-lede" data-pd-type="body.default">{readyCopy.fitsBody} {readyCopy.fitsWeight(weights)}</p>
-      : <><p className="ready-lede" data-pd-type="body.default">{readyCopy.madeRoom(weights)}</p><div className="receipt">
+      : <><p className="ready-lede" data-pd-type="body.default">{flattened ? readyCopy.flattened(weights) : readyCopy.madeRoom(weights)}</p><div className="receipt">
         <div className="receipt-sizes">
           <span className="receipt-before" data-pd-type="data"><s>{formatSize(file.size)}</s></span>
           <Icon name="arrow" size={22} />
@@ -443,56 +566,125 @@ function Ready({ file, outcome, profileId, weights, headingRef, onStricter, onRe
       <span className="file-name" data-pd-type="data">{outputName}</span>
     </div>
     {downloaded && <p className="farewell" data-pd-type="body.default">{readyCopy.downloadedNote} <em data-pd-emphasis="head-italic">{readyCopy.farewell}</em></p>}
-    {profileId !== 'strict-20' && !untouched && <p className="ready-alt" data-pd-type="body.small">{readyCopy.stricter} <button className="text-button" type="button" onClick={onStricter}>{readyCopy.stricterAction}</button></p>}
+    {flattened && onWays && <p className="ready-alt" data-pd-type="body.small">{readyCopy.rather} <button className="text-button" type="button" onClick={onWays}>{readyCopy.ratherAction}</button></p>}
+    {profileId !== 'strict-20' && !untouched && !flattened && <p className="ready-alt" data-pd-type="body.small">{readyCopy.stricter} <button className="text-button" type="button" onClick={onStricter}>{readyCopy.stricterAction}</button></p>}
     <button className="text-button start-over" onClick={onReset} type="button">{readyCopy.startOver}</button>
   </section>
 }
 
-function CantFit({ file, parts, outcome, profileId, weights, headingRef, onGmail, onReset }: { file: File; parts: SplitPart[]; outcome: CompressionOutcome | null; profileId: TargetProfileId; weights: Weights; headingRef: HeadingRef; onGmail: () => void; onReset: () => void }) {
-  const [copied, setCopied] = useState<'idle' | 'done' | 'failed'>('idle')
-  const name = deckName(file.name)
-  const reason = outcome?.splitReason
-  const lightest = outcome ? lightestOf(outcome) : { bytes: file.size, estimated: false, measured: file.size }
-  const lightestText = `${lightest.estimated ? 'about ' : ''}${formatSize(lightest.bytes)}`
+function CantFit({ outcome, flattenMiss, breaks, profileId, weights, headingRef, onGmail, onSplit, onFlatten, onReset }: {
+  outcome: CompressionOutcome; flattenMiss: CompressionOutcome | null; breaks: number[]; profileId: TargetProfileId; weights: Weights; headingRef: HeadingRef
+  onGmail: () => void; onSplit: (breakAfter?: number[]) => void; onFlatten: () => void; onReset: () => void
+}) {
+  const reason = outcome.splitReason
+  const lightest = lightestOf(outcome)
+  const sizeText = (found: { bytes: number; estimated: boolean }) => `${found.estimated ? 'about ' : ''}${formatSize(found.bytes)}`
   // Worth a second run only if a file we actually built would clear Gmail's
   // bigger allowance. A prediction alone could send them round in a circle.
   const gmailBudget = TARGET_PROFILES['gmail-advanced'].recommendedRawBytes
   const tryGmail = profileId !== 'gmail-advanced' && reason !== 'browser-cannot-resize' && weights.budget < gmailBudget && lightest.measured <= gmailBudget
-  const plan = parts.map((part, index) => `Email ${index + 1} of ${parts.length}\nSubject: ${splitCopy.subject(name, index + 1, parts.length)}\nAttach: ${part.name}\n\n${splitCopy.emailBody(name, index + 1, parts.length, part.startPage, part.endPage)}`).join('\n—\n\n')
-  const downloadAll = () => parts.forEach((part, index) => window.setTimeout(() => download(part.bytes, part.name), index * 450))
   // The page's send-a-link guide, when the page around the tool has one.
   const hasGuide = Boolean(document.getElementById('send-a-link'))
   return <section className="panel panel--split" aria-labelledby="emd-split-title">
     <p className="eyebrow" data-pd-type="metadata">{cantFitCopy.eyebrow}</p>
     <h2 id="emd-split-title" ref={headingRef} tabIndex={-1} data-pd-type="heading.subsection">{cantFitCopy.title}</h2>
-    <p className="ready-lede" data-pd-type="body.default">{cantFitCopy.reason(reason, lightestText, weights)}</p>
-    <p data-pd-type="body.default">{cantFitCopy.ways}</p>
+    <p className="ready-lede" data-pd-type="body.default">{cantFitCopy.reason(reason, sizeText(lightest), weights)}</p>
     {tryGmail && <p className="ready-alt" data-pd-type="body.small">{cantFitCopy.gmailHint} <button className="text-button" type="button" onClick={onGmail}>{cantFitCopy.gmailAction}</button></p>}
+    <p className="ways-intro" data-pd-type="title.functional">{cantFitCopy.ways(ENGINE_FEATURES.flatten ? 3 : 2)}</p>
 
     <div className="way way--pick">
-      <h3 className="way-title" data-pd-type="title.card">{cantFitCopy.linkTitle}<em className="badge">{cantFitCopy.linkBadge}</em></h3>
+      <h3 className="way-title" data-pd-type="title.card"><span className="way-number" data-pd-type="data">1</span>{cantFitCopy.linkTitle}<em className="badge">{cantFitCopy.linkBadge}</em></h3>
       <p data-pd-type="body.default">{cantFitCopy.linkBody}</p>
       {hasGuide && <a className="way-more" href="#send-a-link" data-pd-type="body.small">{cantFitCopy.linkMore}<Icon name="arrow" size={16} /></a>}
     </div>
 
-    <div className="way">
-      <h3 className="way-title" data-pd-type="title.card">{cantFitCopy.partsTitle(parts.length)}</h3>
-      <p data-pd-type="body.default">{cantFitCopy.partsBody(parts.length, weights.mailbox)}</p>
-      <ol className="parts">
-        {parts.map((part, index) => <li className="part" key={part.name}>
-          <span className="part-number" data-pd-type="data">{String(index + 1).padStart(2, '0')}</span>
-          <span className="part-info"><strong data-pd-type="label">{part.name}</strong><span data-pd-type="data">{formatSize(part.bytes.byteLength)} · {part.startPage === part.endPage ? `page ${part.startPage}` : `pages ${part.startPage}–${part.endPage}`}</span></span>
-          <button className="button button--small" onClick={() => download(part.bytes, part.name)} type="button" aria-label={`Download part ${index + 1}`}><Icon name="download" size={16} />{splitCopy.download}</button>
+    <SplitChooser outcome={outcome} initial={breaks} weights={weights} onSplit={onSplit} />
+
+    {ENGINE_FEATURES.flatten && <div className="way way--last">
+      <h3 className="way-title" data-pd-type="title.card"><span className="way-number" data-pd-type="data">3</span>{cantFitCopy.flattenTitle}<em className="badge badge--quiet">{cantFitCopy.flattenBadge}</em></h3>
+      {flattenMiss
+        ? <p className="note note--warn" role="status" data-pd-type="body.default">{cantFitCopy.flattenMiss(sizeText(lightestOf(flattenMiss)), weights)}</p>
+        : <>
+          <p data-pd-type="body.default">{cantFitCopy.flattenBody}</p>
+          <ul className="way-costs" data-pd-type="body.default">{cantFitCopy.flattenCosts.map((cost) => <li key={cost}>{cost}</li>)}</ul>
+          <p data-pd-type="body.small">{cantFitCopy.flattenMaybe}</p>
+          <div className="actions"><button className="button" type="button" onClick={onFlatten}>{cantFitCopy.flattenAction}</button></div>
+        </>}
+    </div>}
+    <button className="text-button start-over" onClick={onReset} type="button">{readyCopy.startOver}</button>
+  </section>
+}
+
+function SplitChooser({ outcome, initial, weights, onSplit }: { outcome: CompressionOutcome; initial: number[]; weights: Weights; onSplit: (breakAfter?: number[]) => void }) {
+  const plan = useMemo(() => splitPlanOf(outcome), [outcome])
+  const budget = outcome.targetBytes
+  const pages = plan?.pageBytes.length ?? outcome.inspection.pages
+  const suggested = useMemo(() => plan ? evenBreaks(plan, Math.min(pages, fewestParts(plan, budget))) : [], [plan, pages, budget])
+  const [breaks, setBreaks] = useState<number[]>(() => initial.length && initial.every((page) => page < pages) ? initial : suggested)
+  const count = plan ? breaks.length + 1 : 2
+  const ranges = rangesFor(breaks, pages)
+  const sizes = plan ? ranges.map(([start, end]) => partEstimate(plan, start, end)) : []
+  const over = sizes.findIndex((bytes) => bytes > budget)
+  const move = (index: number, value: number) => setBreaks((current) => current.map((page, at) => at === index ? value : page))
+  return <div className="way">
+    <h3 className="way-title" data-pd-type="title.card"><span className="way-number" data-pd-type="data">2</span>{cantFitCopy.partsTitle(count)}</h3>
+    <p data-pd-type="body.default">{cantFitCopy.partsBody}</p>
+    {plan && <>
+      <p data-pd-type="body.small">{cantFitCopy.partsEven(count)}</p>
+      {breaks.map((page, index) => {
+        const min = (breaks[index - 1] ?? 0) + 1
+        const max = (breaks[index + 1] ?? pages) - 1
+        const id = `emd-break-${index + 1}`
+        return <div className="split-break" key={id}>
+          <label htmlFor={id} data-pd-type="label">{cantFitCopy.breakLabel(index + 1, count)} <strong data-pd-type="data">{page}</strong></label>
+          <input id={id} type="range" min={min} max={max} step={1} value={page} disabled={min >= max}
+            aria-valuetext={`After slide ${page}`} onChange={(event) => move(index, Number(event.target.value))} />
+        </div>
+      })}
+      <ol className="split-preview" data-pd-type="body.small">
+        {ranges.map(([start, end], index) => <li key={`${start}-${end}`} className={sizes[index] > budget ? 'split-preview-over' : undefined}>
+          <span>{cantFitCopy.partLine(index + 1, start, end)}</span>
+          <span data-pd-type="data">about {formatSize(sizes[index])}{sizes[index] > budget && <em className="badge badge--warn">{cantFitCopy.partOver}</em>}</span>
         </li>)}
       </ol>
-      <div className="actions"><button className="button" type="button" onClick={downloadAll}><Icon name="download" size={18} />{splitCopy.downloadAll(parts.length)}</button></div>
-      <div className="plan">
-        <div className="plan-head"><strong data-pd-type="title.functional">{splitCopy.planTitle}</strong>
-          <button className="button button--small" type="button" onClick={async () => { const ok = await copyText(plan); setCopied(ok ? 'done' : 'failed'); if (ok) window.setTimeout(() => setCopied('idle'), 2200) }}><Icon name={copied === 'done' ? 'check' : 'copy'} size={16} />{copied === 'done' ? splitCopy.copied : splitCopy.copy}</button>
-        </div>
-        <p data-pd-type="body.small">{copied === 'failed' ? splitCopy.copyFailed : splitCopy.planIntro}</p>
-        <pre className="plan-text" tabIndex={0} data-pd-type="data">{plan}</pre>
+      {over >= 0 && <p className="note note--warn" role="status" data-pd-type="body.small">{cantFitCopy.partsOver(over + 1, formatSize(weights.budget))}</p>}
+    </>}
+    <div className="actions">
+      <button className="button" type="button" disabled={over >= 0} onClick={() => onSplit(plan ? breaks : undefined)}>{plan ? cantFitCopy.splitHere : cantFitCopy.splitForMe}</button>
+    </div>
+  </div>
+}
+
+function Parts({ file, parts, budget, weights, headingRef, onWays, onReset }: { file: File; parts: SplitPart[]; budget: number; weights: Weights; headingRef: HeadingRef; onWays?: () => void; onReset: () => void }) {
+  const [copied, setCopied] = useState<'idle' | 'done' | 'failed'>('idle')
+  const name = deckName(file.name)
+  const overBudget = (part: SplitPart) => part.fits === false || (budget > 0 && part.bytes.byteLength > budget)
+  const anyOver = parts.some(overBudget)
+  const plan = parts.map((part, index) => `Email ${index + 1} of ${parts.length}\nSubject: ${splitCopy.subject(name, index + 1, parts.length)}\nAttach: ${part.name}\n\n${splitCopy.emailBody(name, index + 1, parts.length, part.startPage, part.endPage)}`).join('\n—\n\n')
+  const downloadAll = () => parts.forEach((part, index) => window.setTimeout(() => download(part.bytes, part.name), index * 450))
+  return <section className="panel panel--split" aria-labelledby="emd-parts-title">
+    <p className="eyebrow" data-pd-type="metadata">{splitCopy.eyebrow(parts.length)}</p>
+    <h2 id="emd-parts-title" ref={headingRef} tabIndex={-1} data-pd-type="heading.subsection">{splitCopy.title}</h2>
+    {!anyOver && <p className="ready-lede" data-pd-type="body.default">{splitCopy.body(parts.length, weights.mailbox)}</p>}
+    <ol className="parts">
+      {parts.map((part, index) => <li className={`part${overBudget(part) ? ' part--over' : ''}`} key={part.name}>
+        <span className="part-number" data-pd-type="data">{String(index + 1).padStart(2, '0')}</span>
+        <span className="part-info"><strong data-pd-type="label">{part.name}</strong><span data-pd-type="data">{formatSize(part.bytes.byteLength)} · {part.startPage === part.endPage ? `slide ${part.startPage}` : `slides ${part.startPage}–${part.endPage}`}</span>
+          {overBudget(part) && <span className="part-warn" data-pd-type="body.small">{splitCopy.partOver(formatSize(weights.budget))}</span>}
+        </span>
+        <button className="button button--small" onClick={() => download(part.bytes, part.name)} type="button" aria-label={`Download part ${index + 1}`}><Icon name="download" size={16} />{splitCopy.download}</button>
+      </li>)}
+    </ol>
+    <div className="actions">
+      <button className="button button--solid" type="button" onClick={downloadAll}><Icon name="download" size={18} />{splitCopy.downloadAll(parts.length)}</button>
+      {onWays && <button className="text-button" type="button" onClick={onWays}>{splitCopy.change}</button>}
+    </div>
+    <div className="plan">
+      <div className="plan-head"><strong data-pd-type="title.functional">{splitCopy.planTitle}</strong>
+        <button className="button button--small" type="button" onClick={async () => { const ok = await copyText(plan); setCopied(ok ? 'done' : 'failed'); if (ok) window.setTimeout(() => setCopied('idle'), 2200) }}><Icon name={copied === 'done' ? 'check' : 'copy'} size={16} />{copied === 'done' ? splitCopy.copied : splitCopy.copy}</button>
       </div>
+      <p data-pd-type="body.small">{copied === 'failed' ? splitCopy.copyFailed : splitCopy.planIntro}</p>
+      <pre className="plan-text" tabIndex={0} data-pd-type="data">{plan}</pre>
     </div>
     <button className="text-button start-over" onClick={onReset} type="button">{readyCopy.startOver}</button>
   </section>
