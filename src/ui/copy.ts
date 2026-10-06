@@ -343,6 +343,12 @@ export const cantFitCopy = {
   flattenMaybe: 'It might still be too big. If it is, we’ll say so, and the other two ways will be right here.',
   flattenAction: 'Flatten it and try',
   // After a flatten that still didn't fit.
+  flattenTrouble: (kind: ErrorKind) => kind === 'timeout'
+    ? 'Flattening went two whole minutes without getting anywhere, so we stopped it. A laptop may get through it. The link and the split ask far less of your device.'
+    : 'This browser couldn’t flatten it. Chrome or Brave on a laptop should manage. The link and the split work here.',
+  splitTrouble: (kind: ErrorKind) => kind === 'timeout'
+    ? 'Splitting went two whole minutes without getting anywhere, so we stopped it. Try again, or send it by link.'
+    : 'That split didn’t work in this browser. Try again, or send it by link.',
   flattenMiss: (lightest: string, weights: Weights) => `We tried. Even flattened, the lightest we can make it is ${lightest}, and ${weights.mailbox} takes decks up to ${formatSize(weights.budget)}. Some decks are simply too much deck for one email. A link or a split will carry it.`,
   gmailHint: 'Sending from Gmail to Gmail or Google Workspace? Gmail takes a little more, so it may fit in one.',
   gmailAction: 'Try Gmail to Gmail',

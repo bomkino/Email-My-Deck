@@ -16,6 +16,7 @@ type Job = 'compress' | 'split' | 'flatten'
 type SplitPart = { bytes: Uint8Array; name: string; startPage: number; endPage: number; fits?: boolean }
 type Progress = { label: string; fraction: number; stage?: unknown; page?: number; pages?: number }
 type ErrorState = { kind: ErrorKind; detail: string; reason?: string; page?: number }
+type WayTrouble = { job: 'split' | 'flatten'; kind: ErrorKind }
 
 const MAX_BROWSER_BYTES = 200 * 1024 * 1024
 // A job is stopped after this long without any word from the engine. A big
@@ -149,6 +150,8 @@ export default function App() {
   // The lightest single file, kept while the visitor picks a way to send it.
   const [cantFit, setCantFit] = useState<CompressionOutcome | null>(null)
   const [flattenMiss, setFlattenMiss] = useState<CompressionOutcome | null>(null)
+  // A split or flatten that failed, shown on the way that failed.
+  const [wayTrouble, setWayTrouble] = useState<WayTrouble | null>(null)
   const [breaks, setBreaks] = useState<number[]>([])
   const [parts, setParts] = useState<SplitPart[]>([])
   const [error, setError] = useState<ErrorState | null>(null)
@@ -159,6 +162,10 @@ export default function App() {
 
   const profile = useMemo(() => getTargetProfile(profileId, customMessageMB), [profileId, customMessageMB])
   const isBusy = stage === 'reading' || stage === 'compressing' || stage === 'splitting' || stage === 'flattening'
+  const stageRef = useRef(stage)
+  stageRef.current = stage
+  const cantFitRef = useRef(cantFit)
+  cantFitRef.current = cantFit
 
   const clearJobTimeout = useCallback(() => {
     if (jobTimeoutRef.current !== null) {
@@ -169,7 +176,20 @@ export default function App() {
 
   const fail = useCallback((message: string, code?: unknown, extra: { reason?: unknown; page?: unknown } = {}) => {
     clearJobTimeout()
-    setError({ kind: errorKindFor(message, code), detail: message, reason: typeof extra.reason === 'string' ? extra.reason : undefined, page: positive(extra.page) })
+    const kind = errorKindFor(message, code)
+    // A split or flatten that goes wrong goes back to the ways, with a note,
+    // on a fresh engine. The deck they already have is still there.
+    const job = stageRef.current === 'splitting' ? 'split' : stageRef.current === 'flattening' ? 'flatten' : null
+    if (job && cantFitRef.current) {
+      workerRef.current?.terminate()
+      workerRef.current = null
+      setWorkerNonce((nonce) => nonce + 1)
+      setWayTrouble({ job, kind })
+      setProgress({ label: '', fraction: 0 })
+      setStage('cant-fit')
+      return
+    }
+    setError({ kind, detail: message, reason: typeof extra.reason === 'string' ? extra.reason : undefined, page: positive(extra.page) })
     setStage('error')
   }, [clearJobTimeout])
 
@@ -235,6 +255,7 @@ export default function App() {
           // Nothing is split until the visitor picks a way to send it.
           setCantFit(next)
           setFlattenMiss(null)
+          setWayTrouble(null)
           setBreaks([])
           setStage('cant-fit')
         }
@@ -308,6 +329,7 @@ export default function App() {
     setOutcome(null)
     setCantFit(null)
     setFlattenMiss(null)
+    setWayTrouble(null)
     setBreaks([])
     setParts([])
     setError(null)
@@ -337,6 +359,7 @@ export default function App() {
     setOutcome(null)
     setCantFit(null)
     setFlattenMiss(null)
+    setWayTrouble(null)
     setBreaks([])
     setParts([])
     setStage('reading')
@@ -364,6 +387,7 @@ export default function App() {
     if (!worker || !cantFit) return
     const jobId = ++jobIdRef.current
     jobRef.current = 'split'
+    setWayTrouble(null)
     armWatchdog(jobId)
     if (breakAfter) setBreaks(breakAfter)
     setStage('splitting')
@@ -380,6 +404,7 @@ export default function App() {
     if (!worker || !source) return
     const jobId = ++jobIdRef.current
     jobRef.current = 'flatten'
+    setWayTrouble(null)
     armWatchdog(jobId)
     setStage('flattening')
     setProgress({ label: '', fraction: 0.02, stage: 'flatten' })
@@ -473,7 +498,7 @@ export default function App() {
       onReset={reset}
     />}
     {stage === 'cant-fit' && file && cantFit && <CantFit
-      outcome={cantFit} flattenMiss={flattenMiss} breaks={breaks} profileId={profileId} weights={weightsFor(file.size, profileId, profile)} headingRef={headingRef}
+      outcome={cantFit} flattenMiss={flattenMiss} trouble={wayTrouble} breaks={breaks} profileId={profileId} weights={weightsFor(file.size, profileId, profile)} headingRef={headingRef}
       onGmail={() => { setProfileId('gmail-advanced'); chooseFile(file, 'gmail-advanced', customMessageMB) }}
       onSplit={split} onFlatten={flatten} onReset={reset}
     />}
@@ -608,8 +633,8 @@ function Ready({ file, outcome, profileId, weights, headingRef, onStricter, onWa
   </section>
 }
 
-function CantFit({ outcome, flattenMiss, breaks, profileId, weights, headingRef, onGmail, onSplit, onFlatten, onReset }: {
-  outcome: CompressionOutcome; flattenMiss: CompressionOutcome | null; breaks: number[]; profileId: TargetProfileId; weights: Weights; headingRef: HeadingRef
+function CantFit({ outcome, flattenMiss, trouble, breaks, profileId, weights, headingRef, onGmail, onSplit, onFlatten, onReset }: {
+  outcome: CompressionOutcome; flattenMiss: CompressionOutcome | null; trouble: WayTrouble | null; breaks: number[]; profileId: TargetProfileId; weights: Weights; headingRef: HeadingRef
   onGmail: () => void; onSplit: (breakAfter?: number[]) => void; onFlatten: () => void; onReset: () => void
 }) {
   const reason = outcome.splitReason
@@ -634,11 +659,13 @@ function CantFit({ outcome, flattenMiss, breaks, profileId, weights, headingRef,
       {hasGuide && <a className="way-more" href="#send-a-link" data-pd-type="body.small">{cantFitCopy.linkMore}<Icon name="arrow" size={16} /></a>}
     </div>
 
-    <SplitChooser outcome={outcome} initial={breaks} weights={weights} onSplit={onSplit} />
+    <SplitChooser outcome={outcome} initial={breaks} weights={weights} trouble={trouble?.job === 'split' ? trouble.kind : null} onSplit={onSplit} />
 
     {ENGINE_FEATURES.flatten && <div className="way way--last">
       <h3 className="way-title" data-pd-type="title.card"><span className="way-number" data-pd-type="data">3</span>{cantFitCopy.flattenTitle}<em className="badge badge--quiet">{cantFitCopy.flattenBadge}</em></h3>
-      {flattenMiss
+      {trouble?.job === 'flatten'
+        ? <p className="note note--warn" role="status" data-pd-type="body.default">{cantFitCopy.flattenTrouble(trouble.kind)}</p>
+        : flattenMiss
         ? <p className="note note--warn" role="status" data-pd-type="body.default">{cantFitCopy.flattenMiss(sizeText(lightestOf(flattenMiss)), weights)}</p>
         : <>
           <p data-pd-type="body.default">{cantFitCopy.flattenBody}</p>
@@ -651,7 +678,7 @@ function CantFit({ outcome, flattenMiss, breaks, profileId, weights, headingRef,
   </section>
 }
 
-function SplitChooser({ outcome, initial, weights, onSplit }: { outcome: CompressionOutcome; initial: number[]; weights: Weights; onSplit: (breakAfter?: number[]) => void }) {
+function SplitChooser({ outcome, initial, weights, trouble, onSplit }: { outcome: CompressionOutcome; initial: number[]; weights: Weights; trouble: ErrorKind | null; onSplit: (breakAfter?: number[]) => void }) {
   const plan = useMemo(() => splitPlanOf(outcome), [outcome])
   const budget = outcome.targetBytes
   const pages = plan?.pageBytes.length ?? outcome.inspection.pages
@@ -685,6 +712,7 @@ function SplitChooser({ outcome, initial, weights, onSplit }: { outcome: Compres
       </ol>
       {over >= 0 && <p className="note note--warn" role="status" data-pd-type="body.small">{cantFitCopy.partsOver(over + 1, formatSize(weights.budget))}</p>}
     </>}
+    {trouble && <p className="note note--warn" role="status" data-pd-type="body.default">{cantFitCopy.splitTrouble(trouble)}</p>}
     <div className="actions">
       <button className="button" type="button" disabled={over >= 0} onClick={() => onSplit(plan ? breaks : undefined)}>{plan ? cantFitCopy.splitHere : cantFitCopy.splitForMe}</button>
     </div>
