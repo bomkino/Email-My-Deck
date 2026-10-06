@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- The moment a deck is dropped, the page says what it will weigh as an email against the mailbox picked, including the deck that looks under 25 MB but isn't. The ready screens confirm it: why the deck had to change, or that it fits, packing and all.
+- When a deck can't fit one email, the page says so, gives the reason and the lightest size reached, then offers one link (our pick) before the parts, and Gmail to Gmail when that would fit. Splitting is the last resort.
+
 ## 0.2.0 — 2026-10-06: on pitch.dog, beta
 
 - Email My Deck is now a page on pitch.dog at `/email-my-deck/`, in the site's type system, nav, footer and theme, marked beta with a short section on how to tell us when it breaks.

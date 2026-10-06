@@ -23,7 +23,7 @@ await page.locator('input[type=file]').setInputFiles(resolve(`corpus/${deck}.pdf
 await page.waitForSelector('text=Making it fit', { timeout: 10000 })
 await page.waitForFunction(() => {
   const text = document.body.innerText
-  return text.includes('Ready to attach.') || text.includes('it already fits.') || text.includes('This one goes in') || text.includes('We couldn’t make a version we’d send.')
+  return text.includes('Ready to attach.') || text.includes('it already fits.') || text.includes('We can’t get this one into a single email.') || text.includes('We couldn’t make a version we’d send.')
 }, null, { timeout: 120000 })
 await page.screenshot({ path: 'result-desktop.png', fullPage: true })
 
@@ -37,7 +37,7 @@ if (unexpected.length) throw new Error(`Unexpected network requests: ${unexpecte
 const leaked = requests.filter(({ url, body }) => decodeURIComponent(url + body).toLowerCase().includes(deck))
 if (leaked.length) throw new Error(`A request mentioned the file name: ${leaked.map(({ url }) => url).join(', ')}`)
 const visible = (await page.locator('#emd-root').innerText()).toLowerCase()
-if (!visible.includes('checked on this device') && !visible.includes('split, not smudged')) {
+if (!visible.includes('checked on this device') && !visible.includes('too big for one email')) {
   throw new Error('The processing flow did not reach a checked result or a measured split.')
 }
 console.log('Browser smoke passed; only the page and analytics hosts were contacted, and none of them saw the file name.')

@@ -276,8 +276,6 @@ body.mobile-menu-open { overflow: hidden; }
 .way + .way { animation-delay: 90ms; }
 .way-title { margin: 0; }
 .way > p { color: var(--muted); }
-.way-steps { margin: 0; padding-left: 1.4em; display: grid; gap: 6px; }
-.way-steps li::marker { color: var(--mint-ink); font-family: var(--mono); }
 .way-more { justify-self: start; display: inline-flex; align-items: center; gap: 6px; color: var(--blue); }
 .way .parts { margin: 0; }
 .plan { padding: 16px; display: grid; gap: 10px; border: 1px solid var(--rule); background: var(--paper); }

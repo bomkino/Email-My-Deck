@@ -11,7 +11,7 @@ export function mailboxName(profileId: TargetProfileId, maxMessageBytes: number)
   return `a ${formatSize(maxMessageBytes)} ${profileId === 'custom' ? 'limit' : 'mailbox'}`
 }
 
-/** Sizes for the weigh-in, all in bytes. `email` is what the deck weighs once it's packed into an email. */
+/** Sizes for the weigh-in, all in bytes. `email` is the whole email: the packed deck plus room for a message. */
 export type Weights = { deck: number; email: number; limit: number; budget: number; mailbox: string; conditional: boolean }
 
 export type WeighIn = 'fits' | 'looks-like-it-fits' | 'over'
@@ -29,7 +29,7 @@ export function weighInLine(weights: Weights): string {
     ? `Gmail to Gmail takes decks up to ${formatSize(budget)}. At ${formatSize(deck)}, this one fits, so we’re only checking it.`
     : `Gmail to Gmail takes decks up to ${formatSize(budget)}, so we’re bringing this one down to that.`
   if (kind === 'fits') return `${formatSize(deck)} on your device, about ${formatSize(email)} as an email. That fits ${mailbox}, so we’re only checking it.`
-  if (kind === 'looks-like-it-fits') return `${formatSize(deck)} looks like it fits ${mailbox}. It doesn’t: packing it into an email adds about a third, so it would arrive as about ${formatSize(email)}. We’re bringing it under ${formatSize(budget)}.`
+  if (kind === 'looks-like-it-fits') return `${formatSize(deck)} looks like it fits ${mailbox}. It doesn’t: packing it into an email adds about a third, so with your message it comes to about ${formatSize(email)}. We’re bringing it under ${formatSize(budget)}.`
   return `As an email it would weigh about ${formatSize(email)}. ${capitalise(mailbox)} takes decks up to ${formatSize(budget)}, so we’re bringing it under that.`
 }
 
@@ -206,14 +206,14 @@ export const readyCopy = {
   fitsTitle: 'Good news: it already fits.',
   fitsBody: 'Attach your original exactly as it is. We didn’t change a byte.',
   // The confirmation under "it already fits": what it weighs on the way.
-  fitsWeight: ({ deck, email, mailbox, conditional }: Weights) => conditional
+  fitsWeight: ({ deck, mailbox, conditional }: Weights) => conditional
     ? `At ${formatSize(deck)}, it’s within what Gmail to Gmail takes.`
-    : `At ${formatSize(deck)}, it arrives as about ${formatSize(email)} of email. That fits ${mailbox}, with room left for your message.`,
+    : `At ${formatSize(deck)}, it fits ${mailbox}, packing and all, with room left for your message.`,
   // Above the receipt: why it had to change at all.
   // `weights` are the original's.
   madeRoom: (weights: Weights) => {
     if (weights.conditional) return 'Here’s what we changed to get it under what Gmail to Gmail takes:'
-    if (weighInFor(weights) === 'looks-like-it-fits') return `${formatSize(weights.deck)} looked like it would fit ${weights.mailbox}, but as an email it would have weighed about ${formatSize(weights.email)}. Here’s what we changed to get it in:`
+    if (weighInFor(weights) === 'looks-like-it-fits') return `${formatSize(weights.deck)} looked like it would fit ${weights.mailbox}, but with your message the email would have come to about ${formatSize(weights.email)}. Here’s what we changed to get it in:`
     return `As an email it would have weighed about ${formatSize(weights.email)}. Here’s what we changed to get it in:`
   },
   stamp: 'Fits',
@@ -265,13 +265,8 @@ export const cantFitCopy = {
   ways: 'So you may have to split it. Or keep it whole and send a link.',
   linkTitle: 'Send one link',
   linkBadge: 'Our pick',
-  linkBody: 'Your whole deck, full quality, in one piece. Upload your original to Google Drive, then share it like this:',
-  linkSteps: [
-    'Right-click the file and choose Share.',
-    'Under General access, pick Anyone with the link, as a Viewer.',
-    'Copy the link and paste it into your email.',
-  ],
-  linkMore: 'WeTransfer, Google Drive and Dropbox, compared',
+  linkBody: 'Your whole deck, full quality, in one piece. Put it on a free file-sharing service and email the link instead of the file.',
+  linkMore: 'How to send it by link, for free',
   partsTitle: (count: number) => `Or send it in ${count} emails`,
   partsBody: (count: number, mailbox: string) => `Every slide stays sharp, and each part fits ${mailbox}. Your recipient gets ${count} emails and opens them in order.`,
   gmailHint: (lightest: string) => `Sending from Gmail to Gmail or Google Workspace? At ${lightest}, it may fit in one.`,

@@ -463,7 +463,6 @@ function CantFit({ file, parts, outcome, profileId, weights, headingRef, onGmail
     <div className="way way--pick">
       <h3 className="way-title" data-pd-type="title.card">{cantFitCopy.linkTitle}<em className="badge">{cantFitCopy.linkBadge}</em></h3>
       <p data-pd-type="body.default">{cantFitCopy.linkBody}</p>
-      <ol className="way-steps" data-pd-type="body.default">{cantFitCopy.linkSteps.map((step) => <li key={step}>{step}</li>)}</ol>
       <a className="way-more" href="#send-a-link" data-pd-type="body.small">{cantFitCopy.linkMore}<Icon name="arrow" size={16} /></a>
     </div>
 
