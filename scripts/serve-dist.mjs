@@ -20,15 +20,17 @@ const TYPES = {
   '.woff2': 'font/woff2',
 }
 
-/** `extra` maps URL paths to local files served alongside the site (test fixtures only). */
+/** `extra` maps URL paths to local files, or `{ body }`, served alongside the site with its headers (test fixtures only). */
 export async function serveDist(dir = 'dist', port = 5173, host = '127.0.0.1', extra = new Map()) {
   const root = resolve(dir)
   const rules = parseHeaders(await readFile(join(root, '_headers'), 'utf8').catch(() => ''))
   const server = http.createServer(async (request, response) => {
     const url = new URL(request.url ?? '/', 'http://localhost')
     if (extra.has(url.pathname)) {
-      response.writeHead(200, { 'Content-Type': 'application/octet-stream' })
-      response.end(await readFile(extra.get(url.pathname)))
+      const source = extra.get(url.pathname)
+      const body = typeof source === 'string' ? await readFile(source) : source.body
+      response.writeHead(200, { 'Content-Type': TYPES[extname(url.pathname)] ?? 'application/octet-stream', ...headersFor(rules, url.pathname) })
+      response.end(body)
       return
     }
     let path = normalize(decodeURIComponent(url.pathname))

@@ -57,10 +57,9 @@ npm run smoke
 - Below the floor the deck is split into measured parts: the fewest emails, at the sharpest rung that still needs no more of them.
 - Every result is re-read before it is offered: same page count, same page sizes, sound structure.
 - The worker reports progress as `{ stage, fraction, label, page?, pages? }`; `fraction` never goes backwards. Errors carry a `code` (`not-pdf`, `damaged`, `password`, `restricted`, `protected` with a `reason`, `too-big`, `page-too-large`, `engine`).
+- `node scripts/engine-check.mjs` (after `npm run build` and `npm run corpus`) runs the built engine in Chromium on the synthetic corpus, served with the site's own `_headers` by `scripts/serve-dist.mjs`, and checks each deck's result, the progress events and that nothing leaves the origin. CI runs it and `npm run smoke` against the built site on every pull request.
 
-The compression engine never receives user-controlled command-line arguments. A 120-second browser-job watchdog prevents a pathological file from leaving the interface spinning forever. Large engine assets are bundled and self-hostable; see [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) and [PROVENANCE.md](PROVENANCE.md) before redistribution.
-
-`node scripts/engine-check.mjs` (after `npm run build` and `npm run corpus`) runs the built engine in Chromium on the synthetic corpus, served with the site's own `_headers`, and checks each deck's result, the progress events and that nothing leaves the origin. `node scripts/serve-dist.mjs` serves `dist/` the same way for `npm run smoke`. CI runs both on every pull request.
+The compression engine never receives user-controlled command-line arguments. A 120-second browser-job watchdog prevents a pathological file from leaving the interface spinning forever. Large engine assets are bundled and self-hostable. The Ghostscript WebAssembly distribution is AGPL-3.0-or-later; see [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) and [PROVENANCE.md](PROVENANCE.md) before redistribution.
 
 ## Cloudflare Pages
 

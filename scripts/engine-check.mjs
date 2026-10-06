@@ -29,6 +29,8 @@ const appCode = (await Promise.all((await readdir('dist/assets')).filter((name) 
 if (!appCode.includes(workerName)) throw new Error(`The built page does not load ${workerName}.`)
 
 const extra = new Map(cases.map(({ deck }) => [`/__corpus/${deck}`, join('corpus', deck)]))
+// A blank page on the same origin, under the site's own headers and CSP, so only the engine is tested.
+extra.set('/__engine-check.html', { body: '<!doctype html><meta charset="utf-8"><link rel="icon" href="data:,"><title>Engine check</title>' })
 const server = await serveDist('dist', 0, '127.0.0.1', extra)
 const origin = `http://127.0.0.1:${server.address().port}`
 const browser = await chromium.launch({ executablePath: browserPath, headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] })
@@ -41,7 +43,7 @@ for (const testCase of cases) {
   page.on('request', (request) => requests.push(request.url()))
   page.on('pageerror', (error) => problems.push(`page error: ${error.message}`))
   page.on('console', (message) => { if (message.type() === 'error') problems.push(`console: ${message.text()}`) })
-  await page.goto(`${origin}/`, { waitUntil: 'load' })
+  await page.goto(`${origin}/__engine-check.html`, { waitUntil: 'load' })
   const run = await page.evaluate(async ({ workerUrl, deck, profile, autoSplit }) => {
     const bytes = new Uint8Array(await (await fetch(`/__corpus/${deck}`)).arrayBuffer())
     const size = bytes.byteLength
