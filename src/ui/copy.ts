@@ -269,7 +269,7 @@ export const cantFitCopy = {
   linkMore: 'How to send it by link, for free',
   partsTitle: (count: number) => `Or send it in ${count} emails`,
   partsBody: (count: number, mailbox: string) => `Every slide stays sharp, and each part fits ${mailbox}. Your recipient gets ${count} emails and opens them in order.`,
-  gmailHint: (lightest: string) => `Sending from Gmail to Gmail or Google Workspace? At ${lightest}, it may fit in one.`,
+  gmailHint: 'Sending from Gmail to Gmail or Google Workspace? Gmail takes a little more, so it may fit in one.',
   gmailAction: 'Try Gmail to Gmail',
 }
 
