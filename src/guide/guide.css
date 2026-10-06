@@ -1,0 +1,139 @@
+/* ---------- Send a link instead ---------- */
+/* Colours and rules come from the page tokens in styles.css, so dark mode follows. */
+
+.send-top { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1fr); gap: clamp(32px, 6vw, 112px); align-items: start; }
+.send-top .section-body > p:not([data-pd-type="lead.section"]) { color: var(--muted); }
+.send-icon { display: block; width: 18px; height: 18px; flex: none; }
+
+/* The short answer: one card per pick. */
+.send-picks { margin-top: clamp(44px, 5vw, 80px); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.send-pick { padding: clamp(20px, 2vw, 28px); display: grid; grid-template-rows: auto auto 1fr auto; gap: 12px; border: 1px solid var(--rule); background: var(--powder); }
+.send-pick--all { background: var(--mint); border-color: color-mix(in srgb, var(--mint-ink) 40%, transparent); }
+.send-pick--private { background: var(--lilac); }
+.send-pick--opened { background: var(--blush); }
+.send-pick-for { color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.send-pick--all .send-pick-for { color: var(--mint-ink); }
+.send-pick > p[data-pd-type="body.default"] { color: color-mix(in srgb, var(--ink) 78%, transparent); }
+.send-pick-link { justify-self: start; display: inline-flex; align-items: center; gap: 6px; color: var(--blue); text-decoration: none; }
+.send-pick-link .send-icon { width: 16px; height: 16px; transition: transform 200ms var(--ease); }
+
+/* Side by side. */
+.send-compare { margin-top: clamp(64px, 7vw, 120px); }
+.send-compare-head { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1fr); gap: 16px clamp(32px, 6vw, 112px); align-items: end; margin-bottom: 28px; }
+.send-compare-head > p { color: var(--muted); }
+
+.send-filter { margin: 0 0 32px; padding: 18px 20px; display: grid; gap: 12px; border: 1px solid var(--rule); background: var(--panel); }
+.send-filter[hidden] { display: none; }
+.send-filter-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.send-filter-label { color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.send-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.send-chip { min-height: 44px; padding: 0 14px 0 10px; display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--rule-strong); background: transparent; color: var(--ink); font: inherit; font-size: .95rem; font-weight: 520; cursor: pointer; transition: background 160ms ease, color 160ms ease, border-color 160ms ease, transform 140ms var(--ease); }
+.send-chip .send-icon { width: 18px; height: 18px; padding: 2px; border: 1px solid var(--rule-strong); border-radius: 50%; color: transparent; transition: color 160ms ease, background 160ms ease, border-color 160ms ease; }
+.send-chip:active { transform: scale(.97); }
+.send-chip[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.send-chip[aria-pressed="true"] .send-icon { border-color: var(--paper); background: var(--paper); color: var(--ink); }
+.send-clear[hidden] { display: none; }
+.send-result { min-height: 1.5em; color: var(--muted); }
+
+.svc-head, .svc-card { display: grid; grid-template-columns: minmax(190px, 1.3fr) repeat(6, minmax(0, 1fr)); column-gap: 8px; }
+.svc-head { padding: 0 0 12px; border-bottom: 1px solid var(--rule-strong); color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.svc-head > span { padding: 0 10px; transition: color 200ms ease; }
+.svc-head > span:first-child { padding-left: 0; }
+.svc-head > span[data-lit="true"] { color: var(--mint-ink); }
+.svc-list { margin: 0; padding: 0; list-style: none; }
+.svc { position: relative; border-bottom: 1px solid var(--rule); background: var(--paper); }
+.svc::before { content: ""; position: absolute; left: -14px; top: 18px; bottom: 18px; width: 3px; background: var(--mint-ink); transform: scaleY(0); transition: transform 300ms var(--ease); }
+.svc[data-match="all"]::before { transform: none; }
+.svc-card { padding: 16px 0; align-items: start; }
+.svc-id { padding: 10px 10px 10px 0; display: grid; align-content: start; gap: 6px; }
+.svc-name { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 0; }
+.svc-name .badge { white-space: nowrap; }
+.svc-name .badge[hidden] { display: none; }
+.svc-line { color: var(--muted); }
+.svc[data-match="none"] .svc-name { color: var(--muted); }
+
+.svc-facts { grid-column: 2 / -1; margin: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); column-gap: 8px; }
+@supports (grid-template-columns: subgrid) { .svc-facts { grid-template-columns: subgrid; } }
+.svc-fact { padding: 10px; transition: background 220ms ease; }
+.svc-fact dt { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.svc-fact dd { margin: 0; display: flex; align-items: flex-start; gap: 8px; color: var(--muted); }
+.svc-fact dd .send-icon { width: 16px; height: 16px; margin-top: .2em; }
+.svc-fact[data-yes="true"] dd { color: var(--ink); }
+.svc-fact[data-yes="true"] .send-icon { color: var(--mint-ink); }
+.svc-fact[data-lit="true"][data-yes="true"] { background: var(--mint); }
+.svc-fact[data-lit="true"][data-yes="false"] dd { color: color-mix(in srgb, var(--muted) 80%, transparent); }
+
+.svc-how { grid-column: 1 / -1; }
+.svc-how > summary { min-height: 44px; display: inline-flex; align-items: center; gap: 6px; color: var(--blue); cursor: pointer; list-style: none; }
+.svc-how > summary::-webkit-details-marker { display: none; }
+.svc-how > summary .send-icon { width: 16px; height: 16px; transition: transform 260ms var(--ease); }
+.svc-how[open] > summary .send-icon { transform: rotate(180deg); }
+.svc-how-body { padding: 8px 0 12px; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 18px clamp(28px, 4vw, 64px); align-items: start; animation: fade 260ms ease both; }
+.svc-steps { padding-left: 1.4em; display: grid; gap: 8px; grid-row: span 3; }
+.svc-steps li::marker { color: var(--mint-ink); font-family: var(--mono); }
+.svc-watch { display: grid; gap: 8px; }
+.svc-watch > p { color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.svc-watch ul { padding-left: 1.1em; display: grid; gap: 6px; color: var(--muted); }
+.svc-sources { color: var(--muted); }
+.svc-sources a, .send-fineprint a { white-space: nowrap; }
+.svc-sources .send-icon, .svc-go .send-icon { display: inline-block; width: 14px; height: 14px; margin-left: 2px; vertical-align: -.1em; }
+.svc-go { justify-self: start; }
+
+/* Whatever you use. */
+.send-rules { margin-top: clamp(64px, 7vw, 112px); display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1fr); gap: 20px clamp(32px, 6vw, 112px); align-items: start; }
+.send-rule-list { margin: 0; padding: 0; list-style: none; counter-reset: rule; border-top: 1px solid var(--rule-strong); }
+.send-rule-list li { padding: 18px 0 18px 52px; position: relative; display: grid; gap: 6px; border-bottom: 1px solid var(--rule); counter-increment: rule; }
+.send-rule-list li::before { content: counter(rule, decimal-leading-zero); position: absolute; left: 0; top: 21px; color: var(--muted); font: 550 .72rem/1 var(--mono); letter-spacing: .06em; }
+.send-rule-list span { color: var(--muted); }
+
+.send-leftout { margin-top: 40px; max-width: 72ch; color: var(--muted); }
+.send-fineprint { margin-top: 12px; max-width: 72ch; color: var(--muted); }
+.send-leftout a { white-space: nowrap; }
+.send-leftout .send-icon { display: inline-block; width: 14px; height: 14px; margin-left: 2px; vertical-align: -.1em; }
+
+@media (hover: hover) and (pointer: fine) {
+  .send-chip:hover { background: color-mix(in srgb, var(--ink) 7%, transparent); }
+  .send-chip[aria-pressed="true"]:hover { background: color-mix(in srgb, var(--ink) 86%, transparent); }
+  .send-pick-link:hover .send-icon { transform: translateX(3px); }
+  .svc-how > summary:hover span { text-decoration: underline; text-underline-offset: 4px; }
+}
+
+@media (max-width: 1180px) {
+  .send-picks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .svc-head { display: none; }
+  .svc-card { grid-template-columns: minmax(0, 1fr); row-gap: 8px; padding: 22px 0 12px; }
+  .svc-id { padding: 0; }
+  .svc-facts { grid-column: auto; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 8px; }
+  .svc-fact { padding: 10px 10px 10px 0; }
+  .svc-fact[data-lit="true"] { padding-left: 10px; }
+  .svc-fact dt { position: static; width: auto; height: auto; overflow: visible; clip: auto; white-space: normal; margin-bottom: 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  .svc::before { left: -12px; }
+}
+
+@media (max-width: 900px) {
+  .send-top, .send-compare-head, .send-rules { grid-template-columns: minmax(0, 1fr); }
+  .svc-how-body { grid-template-columns: minmax(0, 1fr); }
+  .svc-steps { grid-row: auto; }
+}
+
+@media (max-width: 600px) {
+  /* Picks and buttons become a row you swipe, so the comparison stays near the top. */
+  .send-picks { margin-inline: -16px; padding: 0 16px 6px; display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding-inline: 16px; scrollbar-width: none; }
+  .send-picks::-webkit-scrollbar, .send-chips::-webkit-scrollbar { display: none; }
+  .send-pick { flex: 0 0 min(82%, 320px); scroll-snap-align: start; }
+  .send-filter { margin-inline: -16px; padding: 16px 0; border-inline: 0; }
+  .send-filter-head, .send-result { padding-inline: 16px; }
+  .send-chips { padding: 0 16px 2px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .send-chip { flex: none; min-height: 42px; font-size: .9rem; }
+  .svc-card { padding: 18px 0 6px; row-gap: 6px; }
+  .svc-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .svc-fact { padding-block: 7px; }
+  .svc-fact dt { margin-bottom: 4px; }
+  .svc::before { left: -8px; }
+  .send-rule-list li { padding-left: 40px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .svc::before, .svc-fact, .send-chip, .svc-how > summary .send-icon { transition: none; }
+  .svc-how-body { animation: none; }
+}
