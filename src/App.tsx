@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { CompressionOutcome } from './lib/compression'
 import { ENGINE_FEATURES } from './lib/engine/protocol'
 import type { SplitPlan } from './lib/engine/split'
 import { emailVersionName } from './lib/filename'
-import { estimatedMessageBytes, getTargetProfile, rawBudgetBytes, TARGET_PROFILES, type TargetProfile, type TargetProfileId } from './lib/profiles'
+import { CUSTOM_MAX_MB, CUSTOM_MIN_MB, estimatedMessageBytes, getTargetProfile, rawBudgetBytes, TARGET_PROFILES, type TargetProfile, type TargetProfileId } from './lib/profiles'
 import {
-  busyCopy, cantFitCopy, errorCopy, errorKindFor, idleCopy, mailboxCopy, mailboxName, pageTooLargeTitle, protectedCopy, readyCopy, splitCopy,
-  stageCopy, stageFor, unsupportedCopy, waitFor, weighInLine, whatFlatteningDid, whatWeDid, type ErrorKind, type Weights,
+  busyCopy, cantFitCopy, customLimitCopy, errorCopy, errorKindFor, idleCopy, mailboxCopy, mailboxName, pageTooLargeTitle, protectedCopy, readyCopy, splitCopy,
+  stageCopy, stageFor, tooBigOnTouch, unsupportedCopy, waitFor, weighInLine, whatFlatteningDid, whatWeDid, type ErrorKind, type Weights,
 } from './ui/copy'
 import { deckName, formatElapsed, formatSize, percentLighter } from './ui/format'
 import { DeckStack, Icon, Meter, Stamp, TipCard, useElapsed, useSmoothProgress, useStatusLine } from './ui/pieces'
@@ -501,7 +502,7 @@ export default function App() {
     </>}
     {isBusy && file && <Busy file={file} stage={stage} progress={progress} weights={weightsFor(file.size, profileId, profile)} headingRef={headingRef} onCancel={cantFit && (stage === 'splitting' || stage === 'flattening') ? backToWays : reset} />}
     {stage === 'ready' && file && outcome && <Ready
-      file={file} outcome={outcome} profileId={profileId} weights={weightsFor(file.size, profileId, profile)} headingRef={headingRef}
+      file={file} outcome={outcome} weights={weightsFor(file.size, profileId, profile)} headingRef={headingRef}
       onStricter={() => { setProfileId('strict-20'); chooseFile(file, 'strict-20', customMessageMB) }}
       onWays={cantFit ? backToWays : undefined}
       onReset={reset}
@@ -515,18 +516,20 @@ export default function App() {
       file={file} parts={parts} budget={cantFit?.targetBytes ?? 0} weights={weightsFor(file.size, profileId, profile)} headingRef={headingRef}
       onWays={cantFit ? backToWays : undefined} onReset={reset}
     />}
-    {draggingPage && !((stage === 'idle' || stage === 'error') && zoneInView) && (stage === 'idle' || stage === 'error' || stage === 'ready' || stage === 'cant-fit' || stage === 'split') && <div className="drop-overlay" aria-hidden="true">
+    {/* In <body>, not the tool: an ancestor with a transform (the tool's rise-in) would hold a fixed overlay inside the tool, where it's clipped out of sight. */}
+    {draggingPage && !((stage === 'idle' || stage === 'error') && zoneInView) && (stage === 'idle' || stage === 'error' || stage === 'ready' || stage === 'cant-fit' || stage === 'split') && createPortal(<div className="drop-overlay" aria-hidden="true">
       <div className="drop-overlay-card"><DeckStack label="your-deck.pdf" state="hover" /><strong data-pd-type="heading.subsection">{idleCopy.dropAnywhere}</strong><span data-pd-type="body.default">{idleCopy.dropAnywhereNote}</span></div>
-    </div>}
+    </div>, document.body)}
   </div>
 }
 
 type HeadingRef = React.RefObject<HTMLHeadingElement | null>
 
 function ErrorNote({ error: { kind, detail, reason, page }, headingRef, onDismiss }: { error: ErrorState; headingRef: HeadingRef; onDismiss: () => void }) {
+  const coarse = useCoarsePointer()
   const copy = errorCopy[kind]
   const title = kind === 'page-too-large' && page ? pageTooLargeTitle(page) : copy.title
-  const body = kind === 'protected' && reason && reason in protectedCopy ? protectedCopy[reason] : copy.body
+  const body = kind === 'protected' && reason && reason in protectedCopy ? protectedCopy[reason] : kind === 'too-big' && coarse ? tooBigOnTouch : copy.body
   return <div className="note note--error" role="alert">
     <div>
       <h2 ref={headingRef} tabIndex={-1} data-pd-type="title.card">{title}</h2>
@@ -617,16 +620,43 @@ function MailboxChoice({ profileId, customMessageMB, onChange, onCustomChange }:
     </div>
     <div className="choice-detail" id="emd-choice-detail" key={profileId}>
       {profileId === 'custom'
-        ? <span className="custom-input">
-            <label htmlFor="emd-custom-mb" data-pd-type="body.small">{current.detail('')}</label>
-            <input id="emd-custom-mb" type="number" inputMode="decimal" min="5" max="70" defaultValue={customMessageMB}
-              onChange={(event) => { const parsed = Number(event.target.value); if (event.target.value !== '' && Number.isFinite(parsed)) onCustomChange(Math.min(70, Math.max(5, parsed))) }}
-              onBlur={(event) => { const parsed = Number(event.target.value); const next = Math.min(70, Math.max(5, Number.isFinite(parsed) && parsed > 0 ? parsed : 5)); event.currentTarget.value = String(next); onCustomChange(next) }} />
-            <span data-pd-type="metadata">MB</span>
-          </span>
+        ? <CustomLimit label={current.detail('')} value={customMessageMB} onChange={onCustomChange} />
         : <p data-pd-type="body.small">{current.detail(budget(profileId))} <a href="#mailboxes">Why it matters</a></p>}
     </div>
   </fieldset>
+}
+
+/** "I know my limit": the box, the range it takes, and a word when a number had to change to fit it. */
+function CustomLimit({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
+  const [moved, setMoved] = useState<'low' | 'high' | null>(null)
+  const clamp = (typed: number) => Math.min(CUSTOM_MAX_MB, Math.max(CUSTOM_MIN_MB, typed))
+  const hasGuide = Boolean(document.getElementById('send-a-link'))
+  return <div className="custom-limit">
+    <span className="custom-input">
+      <label htmlFor="emd-custom-mb" data-pd-type="body.small">{label}</label>
+      <input id="emd-custom-mb" type="number" inputMode="decimal" min={CUSTOM_MIN_MB} max={CUSTOM_MAX_MB} defaultValue={value} aria-describedby="emd-custom-range"
+        onChange={(event) => {
+          const typed = Number(event.target.value)
+          if (event.target.value === '' || !Number.isFinite(typed)) return
+          onChange(clamp(typed))
+          if (typed >= CUSTOM_MIN_MB && typed <= CUSTOM_MAX_MB) setMoved(null)
+        }}
+        onBlur={(event) => {
+          const typed = Number(event.target.value)
+          // An empty or unreadable box goes back to the last good number, without a word.
+          const next = event.target.value === '' || !Number.isFinite(typed) ? value : clamp(typed)
+          setMoved(event.target.value === '' || !Number.isFinite(typed) ? null : typed < CUSTOM_MIN_MB ? 'low' : typed > CUSTOM_MAX_MB ? 'high' : null)
+          event.currentTarget.value = String(next)
+          onChange(next)
+        }} />
+      <span data-pd-type="metadata">MB</span>
+      <span className="custom-range" id="emd-custom-range" data-pd-type="metadata">{customLimitCopy.range(CUSTOM_MIN_MB, CUSTOM_MAX_MB)}</span>
+    </span>
+    <p className="custom-moved" role="status" data-pd-type="body.small">
+      {moved === 'low' && <>{customLimitCopy.low(CUSTOM_MIN_MB)}{hasGuide && <> <a href="#send-a-link">{customLimitCopy.lowAction}</a></>}</>}
+      {moved === 'high' && customLimitCopy.high(CUSTOM_MAX_MB)}
+    </p>
+  </div>
 }
 
 function Busy({ file, stage, progress, weights, headingRef, onCancel }: { file: File; stage: Stage; progress: Progress; weights: Weights; headingRef: HeadingRef; onCancel: () => void }) {
@@ -656,9 +686,10 @@ function Busy({ file, stage, progress, weights, headingRef, onCancel }: { file: 
   </section>
 }
 
-function Ready({ file, outcome, profileId, weights, headingRef, onStricter, onWays, onReset }: { file: File; outcome: CompressionOutcome; profileId: TargetProfileId; weights: Weights; headingRef: HeadingRef; onStricter: () => void; onWays?: () => void; onReset: () => void }) {
+function Ready({ file, outcome, weights, headingRef, onStricter, onWays, onReset }: { file: File; outcome: CompressionOutcome; weights: Weights; headingRef: HeadingRef; onStricter: () => void; onWays?: () => void; onReset: () => void }) {
   const [downloaded, setDownloaded] = useState(false)
   const untouched = outcome.candidate.engine === 'original'
+  const unchecked = untouched ? outcome.unchecked : undefined
   const flattened = (outcome.candidate.engine as string) === 'flattened'
   const outputBytes = outcome.candidate.bytes.byteLength
   const outputName = emailVersionName(file.name)
@@ -669,11 +700,13 @@ function Ready({ file, outcome, profileId, weights, headingRef, onStricter, onWa
   return <section className="panel panel--ready" aria-labelledby="emd-ready-title">
     <div className="ready-top">
       <DeckStack label={outputName} state="done" />
-      <Stamp text={untouched ? readyCopy.stampFits : readyCopy.stamp} />
+      <Stamp text={unchecked ? readyCopy.stampUnchecked : untouched ? readyCopy.stampFits : readyCopy.stamp} />
     </div>
-    <p className="eyebrow" data-pd-type="metadata">{readyCopy.eyebrow}</p>
-    <h2 id="emd-ready-title" ref={headingRef} tabIndex={-1} data-pd-type="heading.subsection">{untouched ? readyCopy.fitsTitle : readyCopy.title}</h2>
-    {untouched
+    <p className="eyebrow" data-pd-type="metadata">{unchecked ? readyCopy.uncheckedEyebrow : readyCopy.eyebrow}</p>
+    <h2 id="emd-ready-title" ref={headingRef} tabIndex={-1} data-pd-type="heading.subsection">{unchecked === 'password' ? readyCopy.lockedTitle : unchecked ? readyCopy.unreadableTitle : untouched ? readyCopy.fitsTitle : readyCopy.title}</h2>
+    {unchecked
+      ? <p className="note note--warn" data-pd-type="body.default">{unchecked === 'password' ? readyCopy.lockedBody : readyCopy.unreadableBody}</p>
+      : untouched
       ? <p className="ready-lede" data-pd-type="body.default">{readyCopy.fitsBody} {readyCopy.fitsWeight(weights)}</p>
       : <><p className="ready-lede" data-pd-type="body.default">{flattened ? readyCopy.flattened(weights) : readyCopy.madeRoom(weights)}</p><div className="receipt">
         <div className="receipt-sizes">
@@ -697,7 +730,7 @@ function Ready({ file, outcome, profileId, weights, headingRef, onStricter, onWa
     </div>
     {downloaded && <p className="farewell" data-pd-type="body.default">{readyCopy.downloadedNote} <em data-pd-emphasis="head-italic">{readyCopy.farewell}</em></p>}
     {flattened && onWays && <p className="ready-alt" data-pd-type="body.small">{readyCopy.rather} <button className="text-button" type="button" onClick={onWays}>{readyCopy.ratherAction}</button></p>}
-    {profileId !== 'strict-20' && !untouched && !flattened && <p className="ready-alt" data-pd-type="body.small">{readyCopy.stricter} <button className="text-button" type="button" onClick={onStricter}>{readyCopy.stricterAction}</button></p>}
+    {weights.limit > TARGET_PROFILES['strict-20'].maxMessageBytes && !untouched && !flattened && <p className="ready-alt" data-pd-type="body.small">{readyCopy.stricter} <button className="text-button" type="button" onClick={onStricter}>{readyCopy.stricterAction}</button></p>}
     <button className="text-button start-over" onClick={onReset} type="button">{readyCopy.startOver}</button>
   </section>
 }
@@ -712,7 +745,8 @@ function CantFit({ outcome, flattenMiss, trouble, breaks, profileId, weights, he
   // Worth a second run only if a file we actually built would clear Gmail's
   // bigger allowance. A prediction alone could send them round in a circle.
   const gmailBudget = TARGET_PROFILES['gmail-advanced'].recommendedRawBytes
-  const tryGmail = profileId !== 'gmail-advanced' && reason !== 'browser-cannot-resize' && weights.budget < gmailBudget && lightest.measured <= gmailBudget
+  // Someone who typed in their own limit was given it by their IT; Gmail's allowance doesn't apply.
+  const tryGmail = profileId !== 'gmail-advanced' && profileId !== 'custom' && reason !== 'browser-cannot-resize' && weights.budget < gmailBudget && lightest.measured <= gmailBudget
   // The page's send-a-link guide, when the page around the tool has one.
   const hasGuide = Boolean(document.getElementById('send-a-link'))
   return <section className="panel panel--split" aria-labelledby="emd-split-title">

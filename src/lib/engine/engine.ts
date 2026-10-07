@@ -73,6 +73,11 @@ export type EngineResult = {
   /** For `flattened`: slides turned into pictures, the fewest pixels across any slide kept and its JPEG quality (1–100), and the lowest clarity (0–1) any slide kept. */
   flatten?: { pages: number; longEdgePx: number; jpegQuality: number; clarity: number }
   elapsedMs: number
+  /**
+   * Only on an untouched `original`: QPDF couldn't read it, so nothing inside was checked.
+   * password: it needs a password to open; unreadable: cut off, damaged or otherwise unreadable.
+   */
+  unchecked?: 'password' | 'unreadable'
   /** Session holding `bytes` at `path`, so an automatic split can reuse it. */
   session?: QpdfSession
   path?: string
@@ -148,13 +153,14 @@ export async function compressDocument(input: Uint8Array, budget: number, deps: 
   })
 
   // A file that already fits is returned byte for byte; QPDF only reads a copy to count its pages.
+  // One QPDF can't read still goes back untouched, marked so the page says nobody looked inside.
   if (input.byteLength <= budget) {
     try {
       const probe = await QpdfSession.create(deps.qpdf)
       probe.writeFile(INPUT, input.slice(), true)
       return original(inspectWithQpdf(probe, INPUT))
-    } catch {
-      return original(null)
+    } catch (error) {
+      return { ...original(null), unchecked: error instanceof EngineError && error.code === 'password' ? 'password' : 'unreadable' }
     }
   }
   attempts.push({ step: 'original', bytes: input.byteLength, fits: false, ms: 0 })

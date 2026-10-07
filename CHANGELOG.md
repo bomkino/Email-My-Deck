@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Fixes from a QA sweep of the live page:
+  - A deck small enough to send, but which can't be read (cut off by a download that stopped, or damaged), no longer gets "Good news: it already fits". It's handed back untouched, and the page says it couldn't open it and asks you to open it yourself before you send it.
+  - A small deck that needs a password says so too: whoever gets it will need the password, sent separately. The engine marks these `unchecked: 'unreadable' | 'password'`.
+  - On phones, the open menu keeps its close button and the theme button on top.
+  - "Our pick" and the other badges no longer break in two.
+  - The dot in the line above the headline is hidden below 390 px, where it was left hanging at the end of a line.
+  - The room bar's size drops under its label instead of breaking mid-value, and no size anywhere breaks between number and unit.
+  - On a computer, "Drop it anywhere" now shows over the whole window while the tool is scrolled away. It was drawn inside the tool, out of sight.
+  - "Make a 20 MB version" is only offered when 20 MB is stricter than the limit you're on.
+  - "I know my limit" shows the range it takes (5 to 70 MB), and says so when a number outside it was changed.
+  - After a limit you typed in, the page no longer suggests Gmail to Gmail.
+  - "Shrank 1 photo that was bigger than it needed to be".
+  - "Try a laptop" now only appears on phones and tablets.
+  - `npm run phones` now checks these too: the open menu, the hanging dot, the limit field, a cut-off deck, and the drag overlay on a computer.
 - Phones: a deck with a long name no longer pushes the tool off the right edge of the screen. On a 412 px phone the ready card had grown to 534 px, cutting off the lede, the receipt, the room bar, the "Fits" stamp and the file name, because the stage's grid column grew to fit the unbroken file name under the download button. Every column in the tool now stops at the screen's width, and that file name wraps. The floating WhatsApp button steps aside while the tool is under it, so it no longer covers the download row. A new check, `npm run phones`, runs in CI on every pull request: it walks every state the tool can show with long file names (spaced, and with no break at all) and looks at the page at 320, 360, 390 and 430 px, failing if anything visible reaches past the edge of the screen.
 - A shared link to the page now shows its own picture instead of pitch.dog's: a deck tucked into an open envelope, glowing pink, with a sticker that says "Fits.", the name and the logo. The card lives on pitch.dog at `/assets/email-my-deck-social-card.jpg` (1200 × 630, 87 KB, so WhatsApp shows it too), because the pitch.dog logo isn't open-licensed; the page's Open Graph and X tags point at it with its size and alt text.
 - The tool comes first. Under the headline it sits front and centre, in a pink-edged panel with a slow WebGL glow round it (a still glow without WebGL, with reduced motion or on Save-Data). Inside are three numbered steps: where it's going, with the four mailbox settings as cards and Most mailboxes already picked, so nobody misses the choice; add your deck; and what comes back. The drop zone breathes, shows a ghost deck dropping in until you touch it, leans toward the pointer, fans its cards when a file is over it, and asks to be tapped on phones. While it's on screen it answers a drag itself; the full-page "Drop it anywhere" card only shows once it has scrolled away. Next and download buttons are pitch.dog pink. Below come the lede and promises, a redrawn phone QR ticket (pink eyes, our logo in the middle, checked with ZXing; `scripts/make-qr.py` draws it), What it's for, then a pitch.dog block with the logo and a way to hire us.

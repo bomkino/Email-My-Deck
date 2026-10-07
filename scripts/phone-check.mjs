@@ -1,5 +1,5 @@
 import { chromium } from 'playwright-core'
-import { copyFile, mkdir, mkdtemp, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -9,6 +9,12 @@ import { join, resolve } from 'node:path'
 // real deck saw it. This walks every state the tool can show, and at each one
 // looks at the page at 320, 360, 390 and 430 px. It fails if the page scrolls
 // sideways or anything visible reaches past either edge of the screen.
+//
+// It also checks a few things people have caught by hand: the open menu
+// covering its own close button, a dot left hanging at the end of a line, a
+// limit under 5 MB changed without a word, a cut-off deck called good news,
+// and "Drop it anywhere" never showing on a computer while the tool is
+// scrolled away.
 //
 // PHONE_URL (or SMOKE_URL) points it at another build, for example a local
 // copy of apps/main-site, a pull request preview or https://pitch.dog/email-my-deck/.
@@ -31,10 +37,16 @@ const tooBig = await named('email-pressure-test', 'ClientName_PitchDeck_Studio_E
 const refused = await named('restricted-deck', 'ClientName_PitchDeck_Studio_Exploration_v1_FINAL_final_for_the_board_locked_by_legal.pdf')
 const notPdf = join(folder, 'ClientName_PitchDeck_Studio_Exploration_v1_FINAL_final_for_the_board_actually_a_text_file.pdf')
 await writeFile(notPdf, 'This is not a PDF.\n'.repeat(200))
+// The first half of a deck, as from a download that stopped.
+const cutOff = join(folder, 'ClientName_PitchDeck_Studio_Exploration_v1_FINAL_final_for_the_board_download_stopped_halfway.pdf')
+const whole = await readFile(resolve('corpus/vector-deck.pdf'))
+await writeFile(cutOff, whole.subarray(0, Math.floor(whole.byteLength / 2)))
 
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] })
 const failures = []
 let looks = 0
+let checks = 0
+const check = (ok, problem) => { checks += 1; if (!ok) failures.push(problem) }
 
 async function look(page, moment) {
   for (const width of widths) {
@@ -73,6 +85,14 @@ async function open() {
   return page
 }
 const stage = (page, ...names) => page.waitForSelector(names.map((name) => `.emd[data-stage="${name}"]`).join(', '), { timeout: wait })
+// True when nothing is drawn over the middle of the element.
+const onTop = (page, selector) => page.evaluate((selector) => {
+  const element = document.querySelector(selector)
+  if (!element) return false
+  const box = element.getBoundingClientRect()
+  const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+  return Boolean(hit && element.contains(hit))
+}, selector)
 const limit = async (page, megabytes) => {
   await page.locator('#emd-root').getByText('I know my limit').click()
   const input = page.locator('#emd-custom-mb')
@@ -80,11 +100,31 @@ const limit = async (page, megabytes) => {
   await input.blur()
 }
 
-// Before a deck: the whole page, then the limit field open.
+// Before a deck: the whole page, the menu, then the limit field open.
 let page = await open()
 await look(page, 'the page before a deck')
+for (const width of widths) {
+  await page.setViewportSize({ width, height: 800 })
+  await page.waitForTimeout(250)
+  // The dot between "Beta" and "Runs in your browser" sits on the same line as what follows it, or isn't shown.
+  const hanging = await page.evaluate(() => {
+    const dot = document.querySelector('.hero-locator-dot')
+    if (!dot?.getClientRects().length || !dot.nextElementSibling) return false
+    return Math.abs(dot.nextElementSibling.getBoundingClientRect().top - dot.getBoundingClientRect().top) > 4
+  })
+  check(!hanging, `the line above the headline, ${width} px: a dot is left hanging at the end of a line`)
+  await page.locator('#mobile-menu-toggle').click()
+  await page.waitForTimeout(700)
+  check(await onTop(page, '#mobile-menu-toggle'), `the open menu, ${width} px: the menu covers its own close button`)
+  check(await onTop(page, '.theme-control'), `the open menu, ${width} px: the menu covers the theme button`)
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(700)
+}
 await limit(page, 15)
 await look(page, 'the limit field open')
+await limit(page, 3)
+check(await page.evaluate(() => Boolean(document.querySelector('.custom-moved')?.textContent?.trim())), 'the limit field: 3 MB became 5 MB without a word')
+await look(page, 'the limit field after a number under 5')
 await page.close()
 
 // A deck that fits: working, then ready.
@@ -120,6 +160,15 @@ await page.waitForTimeout(1200)
 await look(page, 'after flattening')
 await page.close()
 
+// A deck cut off halfway: small enough to send, but nobody could look inside it.
+page = await open()
+await page.locator('input[type=file]').setInputFiles(cutOff)
+await stage(page, 'ready')
+await page.waitForTimeout(1200)
+check(!/good news/i.test(await page.locator('#emd-ready-title').innerText()), 'a cut-off deck: called good news, though nobody could look inside it')
+await look(page, 'a cut-off deck')
+await page.close()
+
 // Decks the tool turns away.
 for (const [file, moment] of [[refused, 'a locked deck refused'], [notPdf, 'not a PDF']]) {
   page = await open()
@@ -130,9 +179,30 @@ for (const [file, moment] of [[refused, 'a locked deck refused'], [notPdf, 'not 
   await page.close()
 }
 
+// On a computer: a file dragged over the page while the tool is scrolled away
+// shows "Drop it anywhere" across the whole window.
+page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
+page.on('pageerror', (error) => failures.push(`page error: ${error.message}`))
+await page.goto(target.href, { waitUntil: 'domcontentloaded', timeout: 15000 })
+await page.locator('#emd-root input[type=file]').waitFor({ state: 'attached', timeout: 15000 })
+await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight))
+await page.waitForTimeout(600)
+await page.evaluate(() => {
+  const data = new DataTransfer()
+  data.items.add(new File(['%PDF-1.7'], 'deck.pdf', { type: 'application/pdf' }))
+  document.body.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: data }))
+})
+await page.waitForTimeout(400)
+check(await page.evaluate(() => {
+  const overlay = document.querySelector('.drop-overlay')
+  const box = overlay?.getBoundingClientRect()
+  return Boolean(box && box.top <= 1 && box.left <= 1 && box.bottom >= innerHeight - 1 && box.right >= innerWidth - 1 && getComputedStyle(overlay).visibility === 'visible')
+}), 'dragging a file on a computer with the tool scrolled away: "Drop it anywhere" doesn’t cover the window')
+await page.close()
+
 await browser.close()
 if (failures.length) {
-  console.error(`On a phone, these reach past the edge of the screen:\n- ${failures.join('\n- ')}\nScreenshots are in phone-check/.`)
+  console.error(`The phone check found:\n- ${failures.join('\n- ')}\nScreenshots of anything past the edge of the screen are in phone-check/.`)
   process.exit(1)
 }
-console.log(`Phone check passed: ${looks} looks, every state at ${widths.join(', ')} px with long file names, and nothing past the edge of the screen.`)
+console.log(`Phone check passed: ${looks} looks, every state at ${widths.join(', ')} px with long file names, and nothing past the edge of the screen. ${checks} more checks passed: the menu, the line above the headline, the limit field, a cut-off deck and a drag on a computer.`)

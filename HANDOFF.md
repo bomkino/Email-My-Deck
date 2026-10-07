@@ -54,7 +54,7 @@ npm test                         engine, inspection, ladder, split, progress and
 npm run build                    TypeScript and production Vite build
 node scripts/engine-check.mjs    built engine in Chromium on the corpus, with the shipped headers
 npm run smoke                    real browser flow on the built site + origin privacy assertion
-npm run phones                   every tool state at 320, 360, 390 and 430 px with long file names: nothing past the screen's edge
+npm run phones                   every tool state at 320, 360, 390 and 430 px with long file names: nothing past the screen's edge; plus the menu, the limit field, a cut-off deck and the drag overlay
 ```
 
 ## Read these files next

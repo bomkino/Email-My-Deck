@@ -59,6 +59,14 @@ export const mailboxCopy: Record<TargetProfileId, { label: string; hint: string;
   },
 }
 
+// Under "I know my limit": what it takes, and what happened to a number outside that.
+export const customLimitCopy = {
+  range: (min: number, max: number) => `Between ${min} and ${max}`,
+  low: (min: number) => `We can’t aim lower than ${min} MB, so it’s set to ${min}. If your limit really is smaller, a link will serve you better.`,
+  lowAction: 'Send it by link',
+  high: (max: number) => `${max} MB is the most we aim for, so it’s set to ${max}.`,
+}
+
 export const mailboxWhy =
   'Mail systems weigh the whole email, after your file has been packed for the trip. Packing adds roughly a third, so we aim below the limit and leave room for your message.'
 
@@ -251,6 +259,13 @@ export const readyCopy = {
   title: 'Ready to attach.',
   fitsTitle: 'Good news: it already fits.',
   fitsBody: 'Attach your original exactly as it is. We didn’t change a byte.',
+  // Small enough, but we couldn't look inside it. Said plainly, so nobody emails a broken deck.
+  uncheckedEyebrow: 'Weighed on this device',
+  stampUnchecked: 'Size fits',
+  unreadableTitle: 'It fits, but we couldn’t open it.',
+  unreadableBody: 'It’s small enough to send as it is, and we didn’t change a byte. But we couldn’t read inside it, and that can mean the file is cut off or damaged. Open it yourself before you send it. If slides are missing, export a fresh copy.',
+  lockedTitle: 'It fits, and it’s locked.',
+  lockedBody: 'It’s small enough to send exactly as it is, and we didn’t change a byte. It needs a password to open, so we couldn’t look inside, and whoever you send it to will need that password too. Send it to them separately, not in the same email.',
   // The confirmation under "it already fits": what it weighs on the way.
   fitsWeight: ({ deck, mailbox, conditional }: Weights) => conditional
     ? `At ${formatSize(deck)}, it’s within what Gmail to Gmail takes.`
@@ -295,7 +310,7 @@ export function whatWeDid({ candidate, receipt }: ReceiptLike): string[] {
   if (receipt.lossless) return ['Tidied the file’s insides. Nothing you can see changed.']
   const { resized, resaved } = receipt.images
   const lines: string[] = []
-  if (resized && receipt.longEdgePx) lines.push(`Shrank ${count(resized, 'photo', 'photos')} that were bigger than they needed to be, to at least ${receipt.longEdgePx.toLocaleString('en')} pixels across the slide.`)
+  if (resized && receipt.longEdgePx) lines.push(`Shrank ${count(resized, 'photo', 'photos')} that ${resized === 1 ? 'was bigger than it' : 'were bigger than they'} needed to be, to at least ${receipt.longEdgePx.toLocaleString('en')} pixels across the slide.`)
   if (resaved) lines.push(`Re-saved ${count(resaved, 'photo', 'photos')} a little lighter.`)
   if (receipt.images.untouched) lines.push(`Left ${count(receipt.images.untouched, 'photo', 'photos')} exactly as ${receipt.images.untouched === 1 ? 'it was' : 'they were'}.`)
   if (receipt.paths?.drawings) lines.push('Trimmed the drawings’ coordinates to finer than any screen can show.')
@@ -401,7 +416,7 @@ export const errorCopy: Record<ErrorKind, { title: string; body: string }> = {
   },
   'too-big': {
     title: 'That’s a lot of deck.',
-    body: 'It’s more than this browser can safely hold in one go. Try a laptop, or export the deck with smaller images and drop it in again.',
+    body: 'It’s more than this browser can safely hold in one go. Export the deck with smaller images and drop it in again.',
   },
   timeout: {
     title: 'This one’s too heavy for this device.',
@@ -436,6 +451,9 @@ export const errorCopy: Record<ErrorKind, { title: string; body: string }> = {
     body: 'Your original is untouched and still on your device. If it keeps happening, tell us at hello@pitch.dog.',
   },
 }
+
+// "That's a lot of deck" on a phone or tablet, where a laptop has more memory to give.
+export const tooBigOnTouch = 'It’s more than this device can safely hold in one go. Try a laptop, or export the deck with smaller images and drop it in again.'
 
 // When the engine says what kind of protection it found.
 export const protectedCopy: Record<string, string> = {

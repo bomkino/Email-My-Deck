@@ -1,10 +1,12 @@
 // Decimal units everywhere, so a size here matches Finder, Explorer and the
 // limit printed by mail providers.
+// The number and its unit are joined by a no-break space, so "35.9 MB" never
+// breaks across two lines.
 export function formatSize(bytes: number): string {
-  if (bytes < 1000) return `${bytes} B`
-  if (bytes < 1_000_000) return `${Math.max(1, Math.round(bytes / 1000))} KB`
+  if (bytes < 1000) return `${bytes}\u00a0B`
+  if (bytes < 1_000_000) return `${Math.max(1, Math.round(bytes / 1000))}\u00a0KB`
   const mb = bytes / 1_000_000
-  return `${mb >= 100 ? Math.round(mb) : mb.toFixed(1).replace(/\.0$/, '')} MB`
+  return `${mb >= 100 ? Math.round(mb) : mb.toFixed(1).replace(/\.0$/, '')}\u00a0MB`
 }
 
 export function formatElapsed(ms: number): string {
