@@ -45,6 +45,8 @@ export type CompressionOutcome = {
   splitReason?: SplitReason
   /** Where the lightest version's bytes are, when it cannot fit. */
   weight?: Weight
+  /** An untouched original QPDF couldn't read; see `EngineResult['unchecked']`. */
+  unchecked?: EngineResult['unchecked']
   /** When it doesn't fit: estimated part weights of `candidate`, for choosing where to split it. */
   splitPlan?: SplitPlan
   elapsedMs: number
@@ -103,6 +105,7 @@ export function toOutcome(result: EngineResult, originalBytes: number, profile: 
     },
     splitReason: result.splitReason,
     weight: result.weight,
+    unchecked: result.unchecked,
     elapsedMs: result.elapsedMs,
   }
 }

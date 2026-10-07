@@ -355,6 +355,21 @@ describe('what the engine refuses, and what it no longer refuses', () => {
     expect(await codeOf(compressDocument(restricted, tooSmall, deps()))).toBe('restricted')
   })
 
+  it('hands back a small deck it cannot read untouched, and says it could not look inside', async () => {
+    const deck = await textDeck(3)
+    const cutOff = deck.slice(0, Math.floor(deck.byteLength / 2))
+    const result = await compressDocument(cutOff.slice(), cutOff.byteLength + 1, deps())
+    expect(result.kind).toBe('original')
+    expect(result.bytes).toEqual(cutOff)
+    expect(result.unchecked).toBe('unreadable')
+    const locked = await qpdfTransform(deck, ['--encrypt', 'open-sesame', 'owner', '256', '--', '{in}', '{out}'])
+    const lockedResult = await compressDocument(locked.slice(), locked.byteLength + 1, deps())
+    expect(lockedResult.kind).toBe('original')
+    expect(lockedResult.bytes).toEqual(locked)
+    expect(lockedResult.unchecked).toBe('password')
+    expect((await compressDocument(deck.slice(), deck.byteLength + 1, deps())).unchecked).toBeUndefined()
+  })
+
   it('works on a file encrypted without restrictions', async () => {
     const plain = await photoDeck({ pages: 3, image: [1200, 675], drawn: [240, 135] })
     const open = await qpdfTransform(plain, ['--encrypt', '', 'owner', '256', '--', '{in}', '{out}'])

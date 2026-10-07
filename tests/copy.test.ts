@@ -1,16 +1,32 @@
 import { describe, expect, it } from 'vitest'
 import { busyCopy, cantFitCopy, commentary, curveBalls, dogFact, mailboxName, stageFor, waitFor, whatFlatteningDid, whatWeDid, type Weights } from '../src/ui/copy'
+import { formatSize } from '../src/ui/format'
 
 const MB = 1_000_000
+// Sizes keep their number and unit together with a no-break space; these tests read it as a plain one.
+const plain = (text: string) => text.replace(/\u00a0/g, ' ')
 const weights = (limitMB: number): Weights => ({ deck: 24 * MB, email: 33 * MB, limit: limitMB * MB, budget: 5.5 * MB, mailbox: mailboxName('custom', limitMB * MB), conditional: false })
 
 describe('page copy', () => {
   it('says "an" before sizes that are said with a vowel', () => {
-    expect(mailboxName('custom', 8 * MB)).toBe('an 8 MB limit')
-    expect(mailboxName('custom', 11 * MB)).toBe('an 11 MB limit')
-    expect(mailboxName('common-25', 25 * MB)).toBe('a 25 MB mailbox')
-    expect(mailboxName('strict-20', 20 * MB)).toBe('a 20 MB mailbox')
-    expect(mailboxName('custom', 15 * MB)).toBe('a 15 MB limit')
+    expect(plain(mailboxName('custom', 8 * MB))).toBe('an 8 MB limit')
+    expect(plain(mailboxName('custom', 11 * MB))).toBe('an 11 MB limit')
+    expect(plain(mailboxName('common-25', 25 * MB))).toBe('a 25 MB mailbox')
+    expect(plain(mailboxName('strict-20', 20 * MB))).toBe('a 20 MB mailbox')
+    expect(plain(mailboxName('custom', 15 * MB))).toBe('a 15 MB limit')
+  })
+
+  it('never breaks a size across two lines', () => {
+    expect(mailboxName('custom', 8 * MB)).toBe('an 8\u00a0MB limit')
+    expect(formatSize(35_900_000)).toBe('35.9\u00a0MB')
+    expect(formatSize(640_000)).toBe('640\u00a0KB')
+  })
+
+  it('says one photo was bigger than it needed to be', () => {
+    const one = whatWeDid({ candidate: { notes: [] }, receipt: { lossless: false, longEdgePx: 1920, images: { resized: 1, resaved: 0 } } })
+    expect(one[0]).toMatch(/^Shrank 1 photo that was bigger than it needed to be/)
+    const two = whatWeDid({ candidate: { notes: [] }, receipt: { lossless: false, longEdgePx: 1920, images: { resized: 2, resaved: 0 } } })
+    expect(two[0]).toMatch(/^Shrank 2 photos that were bigger than they needed to be/)
   })
 
   it('treats the photo size as a floor and owns up to trimmed drawings', () => {
@@ -21,10 +37,10 @@ describe('page copy', () => {
   })
 
   it('names how much of a deck we can only trim, when the engine says', () => {
-    const line = cantFitCopy.reason('not-photos', '10.2 MB', weights(8), { keptImagesBytes: 0, otherBytes: 5.4 * MB })
+    const line = plain(cantFitCopy.reason('not-photos', '10.2 MB', weights(8), { keptImagesBytes: 0, otherBytes: 5.4 * MB }))
     expect(line).toContain('About 5.4 MB of it is drawings')
     expect(line).toContain('An 8 MB limit takes decks up to 5.5 MB.')
-    expect(cantFitCopy.reason('kept-images', '10.2 MB', weights(8), { keptImagesBytes: 7 * MB, otherBytes: 0 })).toMatch(/^About 7 MB of this deck is images we leave exactly as they are/)
+    expect(plain(cantFitCopy.reason('kept-images', '10.2 MB', weights(8), { keptImagesBytes: 7 * MB, otherBytes: 0 }))).toMatch(/^About 7 MB of this deck is images we leave exactly as they are/)
     expect(cantFitCopy.reason('kept-images', '10.2 MB', weights(8))).toMatch(/^Most of its weight is in images/)
   })
 
