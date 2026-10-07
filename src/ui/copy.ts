@@ -344,6 +344,7 @@ export const cantFitCopy = {
     'Text can’t be selected, searched or copied.',
     'Links stop working.',
     'Small type goes a little soft.',
+    'It takes another minute or two, longer on a phone.',
   ],
   flattenMaybe: 'It might still be too big. If it is, we’ll say so, and the other two ways will be right here.',
   flattenAction: 'Flatten it and try',

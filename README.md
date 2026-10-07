@@ -28,7 +28,7 @@ The default **Most mailboxes** setting uses a conservative raw-PDF budget (about
 
 ## How long it takes
 
-Slow on purpose. Each photo is encoded up to six times at every size it's tried at, each try is scored on three 384 px tiles, and the whole deck is rebuilt and measured at each rung, all on the visitor's own device. In Chrome, the 24 MB, 66-slide, 130-photo Figma deck we test with takes about three minutes to squeeze, roughly ten times the work of a single browser encode. FLATTEN_TIME Phones take longer. The progress bar hears from the engine at least every second, and the page's watchdog only stops a job that goes two minutes without progress.
+Slow on purpose. Each photo is encoded up to six times at every size it's tried at, each try is scored on three 384 px tiles, and the whole deck is rebuilt and measured at each rung, all on the visitor's own device. In Chrome, the 24 MB, 66-slide, 130-photo Figma deck we test with takes about three minutes to squeeze, roughly ten times the work of a single browser encode. Flattening it for an 8 MB limit adds about a minute and a half. Phones take longer. The progress bar hears from the engine at least every second, and the page's watchdog only stops a job that goes two minutes without progress.
 
 ## Run locally
 
