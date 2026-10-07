@@ -54,6 +54,7 @@ npm test                         engine, inspection, ladder, split, progress and
 npm run build                    TypeScript and production Vite build
 node scripts/engine-check.mjs    built engine in Chromium on the corpus, with the shipped headers
 npm run smoke                    real browser flow on the built site + origin privacy assertion
+npm run phones                   every tool state at 320, 360, 390 and 430 px with long file names: nothing past the screen's edge
 ```
 
 ## Read these files next
@@ -68,6 +69,7 @@ npm run smoke                    real browser flow on the built site + origin pr
 | `THIRD-PARTY-LICENSES.md` | QPDF, PDF.js, jpegli, SSIMULACRA2, libdeflate, resize and wrapper license notes |
 | `scripts/generate-corpus.mjs` | Synthetic test-deck generation |
 | `scripts/smoke.mjs` | Browser smoke/privacy test |
+| `scripts/phone-check.mjs` | Every tool state at phone widths; run it on the preview and on live with `PHONE_URL` before calling a release done |
 | `scripts/engine-check.mjs` | Built engine on the corpus in Chromium |
 | `scripts/build-pitchdog.mjs` | The build that ships on pitch.dog |
 | `src/ui/copy.ts` | Every string the tool shows |

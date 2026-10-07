@@ -48,9 +48,12 @@ npm run build
 node scripts/engine-check.mjs
 node scripts/serve-dist.mjs dist 5173 &   # serves dist/ with public/_headers
 npm run smoke
+npm run phones
 ```
 
 `npm run smoke` uses the synthetic corpus and a Playwright browser. It fails if a request goes anywhere except the page's own origin, the Google Analytics hosts and Cloudflare's Web Analytics beacon (added on pitch.dog itself), or if any request mentions the test deck's file name. Set `SMOKE_URL` to test the pitch.dog build (for example `http://127.0.0.1:8090/email-my-deck/` with `apps/main-site` served locally) and `CHROMIUM_PATH` to use another browser.
+
+`npm run phones` walks every state the tool can show (the page before a deck, the limit field, working, ready, can't fit, splitting, the parts, flattening and after, a locked deck and a file that isn't a PDF) with long file names, and at each one looks at the page at 320, 360, 390 and 430 px. It fails if the page scrolls sideways or anything visible reaches past the edge of the screen, and saves screenshots of what failed to `phone-check/`. Set `PHONE_URL` to run it on the pitch.dog build, a pull request preview or the live page.
 
 ## On pitch.dog
 
@@ -79,7 +82,7 @@ To ship a change to pitch.dog:
 - Flatten (the nuke, only when the visitor asks): PDF.js (`src/lib/engine/pdfjs.ts`, loaded on demand) draws each slide at 2400 px, nested workers re-save it at eight rungs down to 1024 px, each once with the browser's JPEG encoder and once with jpegli (`src/lib/engine/flatpage.ts`), and each version is scored for clarity against the sharp drawing at 1920 px (`src/lib/engine/perceptual.ts`). `src/lib/engine/flatten.ts` steps slides down where it costs the least clarity per byte, never below a clarity floor, and writes an image-only PDF that QPDF tidies.
 - Every result is re-read before it is offered: same page count, same page sizes, sound structure.
 - The worker reports progress as `{ stage, fraction, label, page?, pages? }`; `fraction` never goes backwards. Stages are `inspect`, `tidy`, `photos`, `resize`, `verify`, `split` and `flatten`. Errors carry a `code` (`not-pdf`, `damaged`, `password`, `restricted`, `protected` with a `reason`, `too-big`, `page-too-large`, `engine`).
-- `node scripts/engine-check.mjs` (after `npm run build` and `npm run corpus`) runs the built engine in Chromium on the synthetic corpus, served with the site's own `_headers` by `scripts/serve-dist.mjs`, and checks each deck's result, the progress events and that nothing leaves the origin. CI runs it and `npm run smoke` against the built site on every pull request.
+- `node scripts/engine-check.mjs` (after `npm run build` and `npm run corpus`) runs the built engine in Chromium on the synthetic corpus, served with the site's own `_headers` by `scripts/serve-dist.mjs`, and checks each deck's result, the progress events and that nothing leaves the origin. CI runs it, `npm run smoke` and `npm run phones` against the built site on every pull request.
 
 The compression engine never receives user-controlled command-line arguments. A browser-job watchdog stops any job that goes two minutes without a progress event, so a pathological file never leaves the interface spinning forever while a big deck that keeps moving is never cut off. Time spent in a hidden tab or on a sleeping phone doesn't count, and the page asks the screen to stay on while it works, where the browser allows it. Large engine assets are bundled and self-hostable; see [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) and [PROVENANCE.md](PROVENANCE.md) before redistribution.
 
