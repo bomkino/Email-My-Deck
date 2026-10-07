@@ -5,7 +5,7 @@ import type { SplitPlan } from './lib/engine/split'
 import { emailVersionName } from './lib/filename'
 import { estimatedMessageBytes, getTargetProfile, rawBudgetBytes, TARGET_PROFILES, type TargetProfile, type TargetProfileId } from './lib/profiles'
 import {
-  busyCopy, cantFitCopy, errorCopy, errorKindFor, idleCopy, mailboxCopy, mailboxName, mailboxWhy, pageTooLargeTitle, protectedCopy, readyCopy, splitCopy,
+  busyCopy, cantFitCopy, errorCopy, errorKindFor, idleCopy, mailboxCopy, mailboxName, pageTooLargeTitle, protectedCopy, readyCopy, splitCopy,
   stageCopy, stageFor, unsupportedCopy, waitFor, weighInLine, whatFlatteningDid, whatWeDid, type ErrorKind, type Weights,
 } from './ui/copy'
 import { deckName, formatElapsed, formatSize, percentLighter } from './ui/format'
@@ -159,6 +159,9 @@ export default function App() {
   const [error, setError] = useState<ErrorState | null>(null)
   const [hoveringZone, setHoveringZone] = useState(false)
   const [draggingPage, setDraggingPage] = useState(false)
+  // When the drop zone is on screen it answers the drag itself; the full-page
+  // "Drop it anywhere" card only shows when it has scrolled out of sight.
+  const [zoneInView, setZoneInView] = useState(false)
   const [workerNonce, setWorkerNonce] = useState(0)
   const [announcement, setAnnouncement] = useState('')
 
@@ -440,6 +443,10 @@ export default function App() {
       if (!hasFiles(event)) return
       event.preventDefault()
       dragDepthRef.current += 1
+      if (dragDepthRef.current === 1) {
+        const zone = document.getElementById('emd-drop')?.getBoundingClientRect()
+        setZoneInView(!!zone && Math.min(zone.bottom, innerHeight) - Math.max(zone.top, 0) >= 160)
+      }
       if (!isBusy) setDraggingPage(true)
     }
     const onOver = (event: DragEvent) => { if (hasFiles(event)) event.preventDefault() }
@@ -474,23 +481,23 @@ export default function App() {
     {stage === 'unsupported' && <Unsupported headingRef={headingRef} />}
     {(stage === 'idle' || stage === 'error') && <>
       {error && <ErrorNote error={error} headingRef={headingRef} onDismiss={reset} />}
-      <button
-        id="emd-drop"
-        className={`dropzone ${hoveringZone || draggingPage ? 'dropzone--hover' : ''}`}
-        onClick={() => inputRef.current?.click()}
-        onDragEnter={() => setHoveringZone(true)}
-        onDragLeave={() => setHoveringZone(false)}
-        type="button"
-        aria-describedby="emd-drop-note"
-      >
-        <DeckStack label="your-deck.pdf" state={hoveringZone || draggingPage ? 'hover' : 'idle'} />
-        <span className="dropzone-title" data-pd-type="title.card">{hoveringZone || draggingPage ? idleCopy.dragging : idleCopy.title}</span>
-        <span className="dropzone-or" data-pd-type="metadata">or</span>
-        <span className="button button--solid">{idleCopy.choose}</span>
-        <span className="dropzone-note" id="emd-drop-note" data-pd-type="body.small">{idleCopy.note}</span>
-      </button>
+      <section className="emd-step" aria-labelledby="emd-step-where">
+        <div className="emd-step-head">
+          <span className="emd-step-number" aria-hidden="true">1</span>
+          <h2 id="emd-step-where" data-pd-type="title.functional">{idleCopy.stepWhere}</h2>
+          <a className="emd-step-aside" href="#mailboxes" data-pd-type="body.small">{idleCopy.stepWhereAside}</a>
+        </div>
+        <MailboxChoice profileId={profileId} customMessageMB={customMessageMB} onChange={setProfileId} onCustomChange={setCustomMessageMB} />
+      </section>
+      <section className="emd-step" aria-labelledby="emd-step-drop">
+        <div className="emd-step-head">
+          <span className="emd-step-number" aria-hidden="true">2</span>
+          <h2 id="emd-step-drop" data-pd-type="title.functional">{idleCopy.stepDrop}</h2>
+        </div>
+        <DropZone dragging={hoveringZone || draggingPage} onHover={setHoveringZone} onChoose={() => inputRef.current?.click()} />
+      </section>
+      <p className="emd-step-after" data-pd-type="body.small"><span className="emd-step-number emd-step-number--quiet" aria-hidden="true">3</span>{idleCopy.stepAfter}</p>
       <input ref={inputRef} className="sr-only" type="file" accept="application/pdf,.pdf" tabIndex={-1} aria-hidden="true" onChange={(event) => chooseFile(event.target.files?.[0])} />
-      <MailboxPicker profileId={profileId} customMessageMB={customMessageMB} onChange={setProfileId} onCustomChange={setCustomMessageMB} />
     </>}
     {isBusy && file && <Busy file={file} stage={stage} progress={progress} weights={weightsFor(file.size, profileId, profile)} headingRef={headingRef} onCancel={cantFit && (stage === 'splitting' || stage === 'flattening') ? backToWays : reset} />}
     {stage === 'ready' && file && outcome && <Ready
@@ -508,7 +515,7 @@ export default function App() {
       file={file} parts={parts} budget={cantFit?.targetBytes ?? 0} weights={weightsFor(file.size, profileId, profile)} headingRef={headingRef}
       onWays={cantFit ? backToWays : undefined} onReset={reset}
     />}
-    {draggingPage && (stage === 'idle' || stage === 'error' || stage === 'ready' || stage === 'cant-fit' || stage === 'split') && <div className="drop-overlay" aria-hidden="true">
+    {draggingPage && !((stage === 'idle' || stage === 'error') && zoneInView) && (stage === 'idle' || stage === 'error' || stage === 'ready' || stage === 'cant-fit' || stage === 'split') && <div className="drop-overlay" aria-hidden="true">
       <div className="drop-overlay-card"><DeckStack label="your-deck.pdf" state="hover" /><strong data-pd-type="heading.subsection">{idleCopy.dropAnywhere}</strong><span data-pd-type="body.default">{idleCopy.dropAnywhereNote}</span></div>
     </div>}
   </div>
@@ -530,36 +537,96 @@ function ErrorNote({ error: { kind, detail, reason, page }, headingRef, onDismis
   </div>
 }
 
-function MailboxPicker({ profileId, customMessageMB, onChange, onCustomChange }: { profileId: TargetProfileId; customMessageMB: number; onChange: (value: TargetProfileId) => void; onCustomChange: (value: number) => void }) {
-  const [open, setOpen] = useState(false)
+/** True on phones and tablets, where nothing gets dragged and "drop" means nothing. */
+function useCoarsePointer() {
+  const query = '(hover: none) and (pointer: coarse)'
+  const [coarse, setCoarse] = useState(() => typeof matchMedia === 'function' && matchMedia(query).matches)
+  useEffect(() => {
+    if (typeof matchMedia !== 'function') return
+    const list = matchMedia(query)
+    const update = () => setCoarse(list.matches)
+    list.addEventListener('change', update)
+    return () => list.removeEventListener('change', update)
+  }, [])
+  return coarse
+}
+
+/**
+ * The big target. It breathes while it waits, shows a ghost deck dropping in
+ * a few times so the gesture explains itself, leans toward the pointer, and
+ * fans the cards out when a file is over it.
+ */
+function DropZone({ dragging, onHover, onChoose }: { dragging: boolean; onHover: (value: boolean) => void; onChoose: () => void }) {
+  const coarse = useCoarsePointer()
+  const [touched, setTouched] = useState(false)
+  const zoneRef = useRef<HTMLButtonElement>(null)
+  const lean = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.pointerType !== 'mouse' || !zoneRef.current) return
+    const box = zoneRef.current.getBoundingClientRect()
+    zoneRef.current.style.setProperty('--lean-x', (((event.clientX - box.left) / box.width) * 2 - 1).toFixed(3))
+    zoneRef.current.style.setProperty('--lean-y', (((event.clientY - box.top) / box.height) * 2 - 1).toFixed(3))
+  }
+  const settle = () => {
+    zoneRef.current?.style.setProperty('--lean-x', '0')
+    zoneRef.current?.style.setProperty('--lean-y', '0')
+  }
+  return <button
+    ref={zoneRef}
+    id="emd-drop"
+    className={`dropzone ${dragging ? 'dropzone--hover' : ''} ${touched ? '' : 'dropzone--demo'} ${coarse ? 'dropzone--touch' : ''}`}
+    onClick={onChoose}
+    onPointerEnter={() => setTouched(true)}
+    onPointerMove={lean}
+    onPointerLeave={settle}
+    onFocus={() => setTouched(true)}
+    onDragEnter={() => { setTouched(true); onHover(true) }}
+    onDragLeave={() => onHover(false)}
+    type="button"
+    aria-describedby="emd-drop-note"
+  >
+    <svg className="dropzone-edge" aria-hidden="true" focusable="false"><rect x="0" y="0" width="100%" height="100%" /></svg>
+    <span className="dropzone-art">
+      <DeckStack label="your-deck.pdf" state={dragging ? 'hover' : 'idle'} />
+      <span className="dropzone-ghost" aria-hidden="true">
+        <span className="deck-card-title" /><span className="deck-card-line" /><span className="deck-card-label">pitch.pdf</span>
+        <svg className="dropzone-cursor" viewBox="0 0 24 24" focusable="false"><path d="M5 2.5 19 13l-6.4 1.2-3.6 6.3z" /></svg>
+      </span>
+    </span>
+    <span className="dropzone-title" data-pd-type="heading.subsection">{dragging ? idleCopy.dragging : coarse ? idleCopy.titleTouch : idleCopy.title}</span>
+    {!coarse && <span className="dropzone-or" data-pd-type="metadata">or</span>}
+    <span className="button button--brand button--large"><Icon name="file" size={20} />{idleCopy.choose}</span>
+    <span className="dropzone-note" id="emd-drop-note" data-pd-type="body.small">{idleCopy.note}</span>
+  </button>
+}
+
+/** Where the deck is going, out in the open: four big choices, one already picked. */
+function MailboxChoice({ profileId, customMessageMB, onChange, onCustomChange }: { profileId: TargetProfileId; customMessageMB: number; onChange: (value: TargetProfileId) => void; onCustomChange: (value: number) => void }) {
   const ids: TargetProfileId[] = ['common-25', 'strict-20', 'gmail-advanced', 'custom']
   const budget = (id: TargetProfileId) => id === 'custom' ? '' : `about ${formatSize(TARGET_PROFILES[id].recommendedRawBytes)}`
   const current = mailboxCopy[profileId]
-  return <div className={`mailbox ${open ? 'mailbox--open' : ''}`}>
-    <div className="mailbox-summary">
-      <span data-pd-type="metadata">Sending to</span>
-      <strong data-pd-type="label">{profileId === 'custom' ? `A ${customMessageMB} MB limit` : current.label}</strong>
-      <button className="text-button" type="button" aria-expanded={open} aria-controls="emd-mailbox" onClick={() => setOpen(!open)}>{open ? 'Done' : 'Change'}</button>
+  return <fieldset className="choices">
+    <legend className="sr-only">{idleCopy.stepWhere}</legend>
+    <div className="choice-row">
+      {ids.map((id) => <label className={`choice ${profileId === id ? 'choice--on' : ''}`} key={id}>
+        <input type="radio" name="emd-profile" value={id} checked={profileId === id} onChange={() => onChange(id)} aria-describedby={profileId === id ? 'emd-choice-detail' : undefined} />
+        <span className="choice-tick" aria-hidden="true"><Icon name="check" size={14} /></span>
+        <span className="choice-label" data-pd-type="label">{mailboxCopy[id].label}</span>
+        <span className="choice-hint" data-pd-type="body.small">{mailboxCopy[id].hint}</span>
+        {mailboxCopy[id].badge && <em className="badge choice-badge">{mailboxCopy[id].badge}</em>}
+      </label>)}
     </div>
-    {open && <fieldset className="mailbox-options" id="emd-mailbox">
-      <legend className="sr-only">Where is this deck going?</legend>
-      <p className="mailbox-why" data-pd-type="body.small">{mailboxWhy}</p>
-      {ids.map((id) => <label className={`mailbox-option ${profileId === id ? 'mailbox-option--on' : ''}`} key={id}>
-        <input type="radio" name="emd-profile" checked={profileId === id} onChange={() => onChange(id)} />
-        <span className="radio" aria-hidden="true" />
-        <span className="mailbox-copy">
-          <strong data-pd-type="label">{mailboxCopy[id].label}{mailboxCopy[id].badge && <em className="badge">{mailboxCopy[id].badge}</em>}</strong>
-          <small data-pd-type="body.small">{mailboxCopy[id].detail(budget(id))}</small>
-          {id === 'custom' && profileId === 'custom' && <span className="custom-input">
-            <input aria-label="Your mail system's message limit, in MB" type="number" inputMode="decimal" min="5" max="70" defaultValue={customMessageMB}
+    <div className="choice-detail" id="emd-choice-detail" key={profileId}>
+      {profileId === 'custom'
+        ? <span className="custom-input">
+            <label htmlFor="emd-custom-mb" data-pd-type="body.small">{current.detail('')}</label>
+            <input id="emd-custom-mb" type="number" inputMode="decimal" min="5" max="70" defaultValue={customMessageMB}
               onChange={(event) => { const parsed = Number(event.target.value); if (event.target.value !== '' && Number.isFinite(parsed)) onCustomChange(Math.min(70, Math.max(5, parsed))) }}
               onBlur={(event) => { const parsed = Number(event.target.value); const next = Math.min(70, Math.max(5, Number.isFinite(parsed) && parsed > 0 ? parsed : 5)); event.currentTarget.value = String(next); onCustomChange(next) }} />
             <span data-pd-type="metadata">MB</span>
-          </span>}
-        </span>
-      </label>)}
-    </fieldset>}
-  </div>
+          </span>
+        : <p data-pd-type="body.small">{current.detail(budget(profileId))} <a href="#mailboxes">Why it matters</a></p>}
+    </div>
+  </fieldset>
 }
 
 function Busy({ file, stage, progress, weights, headingRef, onCancel }: { file: File; stage: Stage; progress: Progress; weights: Weights; headingRef: HeadingRef; onCancel: () => void }) {
@@ -625,7 +692,7 @@ function Ready({ file, outcome, profileId, weights, headingRef, onStricter, onWa
     <div className="actions">
       {untouched
         ? <button className="button" onClick={save} type="button"><Icon name="download" size={18} />{downloaded ? readyCopy.downloadAgain : readyCopy.downloadOriginal}</button>
-        : <button className="button button--solid button--large" onClick={save} type="button"><Icon name="download" size={19} />{downloaded ? readyCopy.downloadAgain : readyCopy.download}</button>}
+        : <button className="button button--brand button--large" onClick={save} type="button"><Icon name="download" size={19} />{downloaded ? readyCopy.downloadAgain : readyCopy.download}</button>}
       <span className="file-name" data-pd-type="data">{outputName}</span>
     </div>
     {downloaded && <p className="farewell" data-pd-type="body.default">{readyCopy.downloadedNote} <em data-pd-emphasis="head-italic">{readyCopy.farewell}</em></p>}
@@ -742,7 +809,7 @@ function Parts({ file, parts, budget, weights, headingRef, onWays, onReset }: { 
       </li>)}
     </ol>
     <div className="actions">
-      <button className="button button--solid" type="button" onClick={downloadAll}><Icon name="download" size={18} />{splitCopy.downloadAll(parts.length)}</button>
+      <button className="button button--brand" type="button" onClick={downloadAll}><Icon name="download" size={18} />{splitCopy.downloadAll(parts.length)}</button>
       {onWays && <button className="text-button" type="button" onClick={onWays}>{splitCopy.change}</button>}
     </div>
     <div className="plan">

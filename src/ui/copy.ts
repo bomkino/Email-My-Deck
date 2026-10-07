@@ -35,22 +35,26 @@ export function weighInLine(weights: Weights): string {
   return `As an email it would weigh about ${formatSize(email)}. ${capitalise(mailbox)} takes decks up to ${formatSize(budget)}, so we’re bringing it under that.`
 }
 
-export const mailboxCopy: Record<TargetProfileId, { label: string; detail: (budget: string) => string; badge?: string }> = {
+export const mailboxCopy: Record<TargetProfileId, { label: string; hint: string; detail: (budget: string) => string; badge?: string }> = {
   'common-25': {
     label: 'Most mailboxes',
+    hint: 'Not sure? Keep this one.',
     detail: (budget) => `Keeps the whole email under 25 MB. Your deck can be up to ${budget}.`,
     badge: 'Our pick',
   },
   'strict-20': {
     label: 'Strict or work mailboxes',
+    hint: 'Company or iCloud',
     detail: (budget) => `For 20 MB limits, like iCloud Mail and many company servers. Deck up to ${budget}.`,
   },
   'gmail-advanced': {
     label: 'Gmail to Gmail only',
+    hint: 'Everyone’s on Gmail',
     detail: (budget) => `Only when you and everyone you’re sending to use Gmail or Google Workspace. Deck up to ${budget}.`,
   },
   custom: {
     label: 'I know my limit',
+    hint: 'IT gave you a number',
     detail: () => 'Type the message limit your mail system gives you.',
   },
 }
@@ -98,7 +102,13 @@ export function stageFor(label: string, stage?: unknown): StageKey | null {
 }
 
 export const idleCopy = {
+  // The widget reads as three numbered steps, so nobody has to guess.
+  stepWhere: 'Where’s it going?',
+  stepWhereAside: 'What’s the difference?',
+  stepDrop: 'Add your deck',
+  stepAfter: 'Get back the best-looking version that fits. Attach it and send.',
   title: 'Drop your deck here',
+  titleTouch: 'Tap to choose your deck',
   dragging: 'Let go. We’ve got it.',
   choose: 'Choose a PDF',
   note: 'PDF only. It stays on this device. A big deck takes a few minutes.',
