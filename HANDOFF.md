@@ -10,7 +10,7 @@ The product promise is intentionally narrow:
 
 > Give a non-technical person the best readable email attachment that safely fits the mailbox they selected, while keeping their deck private.
 
-“Best” means highest visual fidelity among the candidates that fit. It does not mean forcing every PDF into one attachment. When one file would require an unreasonable quality loss, the honest answer is measured sequential parts.
+“Best” means highest visual fidelity among the candidates that fit. It does not mean forcing every PDF into one attachment. When one file would require an unreasonable quality loss, the page says why and lets the sender choose how to send it instead: one link, measured parts, or a flattened deck.
 
 ## What was built
 
@@ -22,7 +22,9 @@ The product promise is intentionally narrow:
 - Deterministic filenames ending in `-email-version.pdf` or `-email-version-part-XX-of-YY.pdf`.
 - Local verification of page count and page geometry before offering a result.
 - Protected-feature detection through QPDF's JSON view of the file. Password-protected and permission-restricted files, forms, signatures, attachments, and scripts are refused before rewriting, each with its own message.
-- A split recovery path that rebuilds each page range from the source document, checks every part against the raw budget, and rejects a page that cannot fit by itself.
+- Three ways out when one readable file can't fit, each explained on the card: send one link (with a guide to free services, `src/guide/`), split after the slides the sender picks (each part rebuilt from the source, measured against the raw budget, with a ready-to-copy email plan), or flatten every slide into a picture as a last resort (`src/lib/engine/flatten.ts`).
+- The send-by-link guide also lives lower on the page, folded, after the closing note. Its service data is in `src/guide/services.ts`, with the date each was checked.
+- Slow by design: each photo is encoded up to six times per rung and scored before it's kept, so the 24 MB, 130-photo Figma test deck takes about three minutes in Chrome. The page says so before and during the wait, keeps the screen awake where it can, and its watchdog only stops a job that goes two minutes (of visible time) without progress.
 - Clipboard failure messaging, reduced-motion support, security headers, immutable asset caching, provenance notes, and a CycloneDX SBOM.
 
 ## Why the architecture looks this way
@@ -63,7 +65,7 @@ npm run smoke                    real browser flow on the built site + origin pr
 | `PRIVACY.md` | Exact browser privacy boundary and its limits |
 | `CLOUDFLARE.md` | How the pitch.dog page and the optional standalone build are deployed |
 | `PROVENANCE.md` | Engine versions, build hashes, and source obligations |
-| `THIRD-PARTY-LICENSES.md` | QPDF, PDF.js and wrapper license notes |
+| `THIRD-PARTY-LICENSES.md` | QPDF, PDF.js, jpegli, SSIMULACRA2, libdeflate, resize and wrapper license notes |
 | `scripts/generate-corpus.mjs` | Synthetic test-deck generation |
 | `scripts/smoke.mjs` | Browser smoke/privacy test |
 | `scripts/engine-check.mjs` | Built engine on the corpus in Chromium |
@@ -73,6 +75,10 @@ npm run smoke                    real browser flow on the built site + origin pr
 | `src/lib/engine/split.ts` | Measured page-range splitting |
 | `src/lib/engine/flatten.ts` | Flatten (the nuke): rung choice, image-only PDF, verification |
 | `src/lib/engine/pdfjs.ts`, `src/lib/engine/flatpage.ts`, `src/lib/engine/perceptual.ts` | Drawing slides with PDF.js, re-saving them, and scoring clarity |
+| `src/lib/encoders/` | jpegli, SSIMULACRA2 look check (`looks.ts`), Lanczos3 resize and libdeflate, with the browser's codecs as fallback |
+| `bench/README.md` | How each encoder choice and look target was measured |
+| `scripts/codecs/` | Pinned sources and build scripts for the WebAssembly encoders |
+| `src/guide/services.ts` | The send-by-link guide's services, picks and check dates |
 | `src/lib/engine/protocol.ts` | Messages between the page and the worker |
 | `src/workers/pdf.worker.ts` | Worker boundary and job flow |
 

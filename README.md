@@ -2,7 +2,7 @@
 
 Email My Deck answers one narrow question: **“How do I get this deck into an email without making it unreadable?”**
 
-Drop in a presentation PDF, choose the mailbox limit, and get either a verified `-email-version.pdf` or measured sequential parts with a ready-to-copy email plan. The PDF stays in the browser. There is no account, upload endpoint, email integration, or third-party font dependency. On pitch.dog the page counts visits with Google Analytics, like the rest of the site; the PDF, its name and its contents never leave the browser.
+Drop in a presentation PDF, choose the mailbox limit, and get a verified `-email-version.pdf`. When even the lightest good-looking version can't fit, the page says why and lets the sender choose: one link, measured parts split where they choose with a ready-to-copy email plan, or, as a last resort, a flattened deck. The PDF stays in the browser. There is no account, upload endpoint, email integration, or third-party font dependency. On pitch.dog the page counts visits with Google Analytics, like the rest of the site; the PDF, its name and its contents never leave the browser.
 
 This repository is the complete shareable implementation and handoff for the current release. Start with [HANDOFF.md](HANDOFF.md) for the product story, decisions, test evidence, and deployment gates. [DECISIONS.md](DECISIONS.md) records the important tradeoffs so a future contributor does not accidentally undo the privacy or quality guarantees.
 
@@ -10,12 +10,25 @@ This repository is the complete shareable implementation and handoff for the cur
 
 1. Reads and inspects the PDF in a dedicated browser worker.
 2. Tries the least destructive local optimization first.
-3. Re-saves or resizes photos only as far as it has to, along a ladder measured in pixels across the slide.
+3. Resizes photos only as far as it has to, along a ladder measured in pixels across the slide, and saves each one at the lightest setting that still looks the same (jpegli, checked by SSIMULACRA2).
 4. Verifies that the page count and page geometry survived.
 5. Offers a filename ending in `-email-version.pdf` when one file fits.
-6. If the quality floor cannot be met, creates measured `-email-version-part-01-of-03.pdf` files and separates each email subject from its attachment name.
+6. If the quality floor cannot be met, says why and offers three ways out: send one link (with a guide to free services), split into measured `-email-version-part-01-of-03.pdf` files after the slides the sender picks, each email subject separate from its attachment name, or flatten every slide into a picture.
 
 The default **Most mailboxes** setting uses a conservative raw-PDF budget (about 17.8 MB) so base64/MIME overhead and message text have room. **Strict or work mailboxes** is safer for 20 MB limits. **Gmail to Gmail only** is deliberately conditional, because a large Gmail attachment can still be rejected by a recipient's mail server.
+
+## Stack
+
+- TypeScript, React 19 and Vite. Every word the tool shows is in `src/ui/copy.ts`.
+- [QPDF](https://github.com/qpdf/qpdf) compiled to WebAssembly (`@neslinesli93/qpdf-wasm`) reads the PDF's structure, swaps images back in by object number, tidies losslessly and cuts page ranges.
+- [jpegli](https://github.com/google/jpegli) writes every JPEG. [SSIMULACRA2](https://github.com/cloudinary/ssimulacra2) (the Rust port, built to WebAssembly) scores each try against the original. Lanczos3 resizing comes from `@jsquash/resize`, and [libdeflate](https://github.com/ebiggers/libdeflate) packs lossless streams. All are WebAssembly, served from the same site, and fetched only when a deck has photos. Build scripts and pinned sources are in `scripts/codecs/`.
+- [PDF.js](https://mozilla.github.io/pdf.js/) (`pdfjs-dist`, legacy build) draws slides for flatten, loaded only when someone asks to flatten.
+- Web Workers: one for the engine, nested ones for images and flattened slides.
+- Vitest for unit tests; Playwright with Chromium for `engine-check` and `smoke`.
+
+## How long it takes
+
+Slow on purpose. Each photo is encoded up to six times at every size it's tried at, each try is scored on three 384 px tiles, and the whole deck is rebuilt and measured at each rung, all on the visitor's own device. In Chrome, the 24 MB, 66-slide, 130-photo Figma deck we test with takes about three minutes to squeeze, roughly ten times the work of a single browser encode. Flattening it for an 8 MB limit adds about a minute and a half. Phones take longer. The progress bar hears from the engine at least every second, and the page's watchdog only stops a job that goes two minutes without progress.
 
 ## Run locally
 

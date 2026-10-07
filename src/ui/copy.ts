@@ -101,7 +101,7 @@ export const idleCopy = {
   title: 'Drop your deck here',
   dragging: 'Let go. We’ve got it.',
   choose: 'Choose a PDF',
-  note: 'PDF only. It stays on this device.',
+  note: 'PDF only. It stays on this device. A big deck takes a few minutes.',
   dropAnywhere: 'Drop it anywhere',
   dropAnywhereNote: 'Your deck stays on this device.',
 }
@@ -118,7 +118,7 @@ export const busyCopy = {
   // The line under the bar changes as the wait gets longer. Each one is true:
   // the device does the work, and the watchdog stops a stalled job and says so.
   waits: [
-    { after: 0, text: 'Nothing gets uploaded. Your device is doing all the lifting itself, so a big deck can take a few minutes.' },
+    { after: 0, text: 'Nothing gets uploaded. Your device saves each picture a few ways and keeps the lightest one that still looks right, so a big deck takes a few minutes.' },
     { after: 25_000, text: 'Still going. Some of these photos are enormous, and your device is handling each one personally.' },
     { after: 75_000, text: 'Still at it. Phones take their time with a deck this size. No rush, and nobody else is looking.' },
     { after: 150_000, text: 'A long one. It’s still working, and if it ever gets stuck, we’ll stop and tell you. Stretch your legs. Your deck can’t.' },
@@ -344,6 +344,7 @@ export const cantFitCopy = {
     'Text can’t be selected, searched or copied.',
     'Links stop working.',
     'Small type goes a little soft.',
+    'It takes another minute or two, longer on a phone.',
   ],
   flattenMaybe: 'It might still be too big. If it is, we’ll say so, and the other two ways will be right here.',
   flattenAction: 'Flatten it and try',
