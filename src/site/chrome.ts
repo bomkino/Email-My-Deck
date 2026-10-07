@@ -88,5 +88,32 @@ export function setUpChrome() {
     reveal.forEach((node) => observer.observe(node))
   } else reveal.forEach((node) => node.classList.add('is-visible'))
 
+  tuckContactButton()
+
   requestAnimationFrame(() => root.classList.add('hero-ready'))
+}
+
+// The floating WhatsApp button sits in the bottom-right corner of the screen.
+// On a phone the tool fills that corner, so whenever any part of the tool is
+// under the button (a download row, a file name, a mailbox card), the button
+// steps aside. It comes back once the tool has scrolled away.
+function tuckContactButton() {
+  const fab = document.querySelector<HTMLElement>('.pd-whatsapp-fab')
+  const tool = document.querySelector<HTMLElement>('.tool')
+  if (!fab || !tool) return
+  const clearance = 16
+  let frame = 0
+  const check = () => {
+    frame = 0
+    const button = fab.getBoundingClientRect()
+    const box = tool.getBoundingClientRect()
+    const under = box.top < button.bottom + clearance && box.bottom > button.top - clearance
+      && box.left < button.right + clearance && box.right > button.left - clearance
+    document.body.classList.toggle('fab-tucked', under)
+  }
+  const schedule = () => { if (!frame) frame = requestAnimationFrame(check) }
+  addEventListener('scroll', schedule, { passive: true })
+  addEventListener('resize', schedule)
+  if ('ResizeObserver' in window) new ResizeObserver(schedule).observe(tool)
+  schedule()
 }

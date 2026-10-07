@@ -148,6 +148,8 @@
   .svc::before { left: -8px; }
   .send-rule-list li { padding-left: 40px; }
   .send-toggle { padding: 14px 18px; }
+  /* Links in running text may wrap on a phone; held on one line they can run off a narrow screen. */
+  .svc-sources a, .send-fineprint a, .send-leftout a { white-space: normal; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -18,7 +18,7 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -47,3 +47,20 @@ jobs:
             sleep 1
           done
           npm run smoke
+      - name: Phone widths check on the built site
+        run: |
+          if ! curl --fail --silent http://127.0.0.1:5173/ >/dev/null; then
+            node scripts/serve-dist.mjs dist 5173 > /tmp/serve-dist-phones.log 2>&1 &
+          fi
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:5173/ >/dev/null; then break; fi
+            sleep 1
+          done
+          npm run phones
+      - name: Keep the phone check's screenshots when it fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phone-check
+          path: phone-check/
+          if-no-files-found: ignore

@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "corpus": "node scripts/generate-corpus.mjs",
     "smoke": "node scripts/smoke.mjs",
+    "phones": "node scripts/phone-check.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "build:pitchdog": "tsc -b && node scripts/build-pitchdog.mjs"

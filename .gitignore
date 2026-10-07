@@ -12,3 +12,4 @@ scripts/codecs/ssimulacra2/tools/
 scripts/codecs/ssimulacra2/vendor/
 scripts/codecs/ssimulacra2/crate/target-*/
 scripts/codecs/ssimulacra2/*.wasm
+phone-check/
