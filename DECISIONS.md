@@ -23,6 +23,7 @@ These are the decisions behind the current implementation. They are here to prev
 | Hosting | A static page on pitch.dog, shipped from `bomkino/pitchdog-cloudflare-sites`; a standalone Pages deploy runs by hand only | No upload API, storage, database, or paid runtime is needed. |
 | License | AGPL-3.0-or-later | Improvements to a hosted version remain available to the community. |
 | Home and analytics (2026-10-06) | A page on pitch.dog at `/email-my-deck/`, using the site's Google Analytics tag with session replay off | The team wanted visit counts like every other pitch.dog page. The tool sends no file, file name or contents; copy says we count visits and never claims "no analytics". |
+| Page layout (2026-10-07) | Headline, then the tool, then everything else; the mailbox setting as four cards in plain sight | People testing the page found the side-by-side hero confusing on desktop and never saw the mailbox setting behind a "Change" link. The tool now sits centred under the headline as three numbered steps (where it's going, add your deck, what comes back), Most mailboxes already picked. Its glow is decoration only: without WebGL, with reduced motion or on Save-Data, a still CSS glow stays. |
 
 ## Approaches deliberately rejected
 

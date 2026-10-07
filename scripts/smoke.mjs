@@ -17,8 +17,13 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } })
 const requests = []
 page.on('request', (request) => requests.push({ url: request.url(), body: request.postData() || '' }))
 await page.goto(target.href, { waitUntil: 'domcontentloaded', timeout: 10000 })
-await page.locator('#emd-root').getByRole('button', { name: 'Change' }).click()
-await page.locator('#emd-root').getByText('Strict or work mailboxes').click()
+// The mailbox choice sits out in the open: four cards, Most mailboxes already picked.
+const tool = page.locator('#emd-root')
+const mailbox = (name) => tool.getByRole('radio', { name })
+await mailbox(/Most mailboxes/).waitFor({ state: 'attached', timeout: 10000 })
+if (!(await mailbox(/Most mailboxes/).isChecked())) throw new Error('Most mailboxes should be picked to start with.')
+await tool.getByText('Strict or work mailboxes').click()
+if (!(await mailbox(/Strict or work mailboxes/).isChecked())) throw new Error('Clicking a mailbox card did not pick it.')
 await page.locator('input[type=file]').setInputFiles(resolve(`corpus/${deck}.pdf`))
 await page.waitForSelector('text=Making it fit', { timeout: 10000 })
 await page.waitForFunction(() => {
