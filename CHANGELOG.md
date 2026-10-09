@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The privacy promise no longer says "uploaded". People can't tell what counts as an upload when the deck is open in their own browser. The page now says what it means: your deck never leaves your device, and we'll never see it. That covers the promise strip ("Never leaves your device. We'll never see it."), step 01, the Private card, the "Can you see my deck?" answer, the first waiting line, a curve-ball line ("Going nowhere, on purpose"), the meta description and the Open Graph and X descriptions ("It never leaves your device." instead of "your browser").
 - The share picture now wears Email My Deck's own look, the riso-printed envelope its outro films end on: pitch.dog's mark and "From: pitch.dog/email-my-deck" as the return address, the pink "25" stamp over its wavy postmark, the name where the address goes, and "Go well, little deck." It lives on pitch.dog at `/assets/email-my-deck-social-card-envelope.jpg` (1200 × 630, 194 KB, under WhatsApp's limit), a new name so apps that cached the old picture fetch this one. The Open Graph, X and JSON-LD tags point at it, with new alt text.
 - Fixes from a QA sweep of the live page:
   - A deck small enough to send, but which can't be read (cut off by a download that stopped, or damaged), no longer gets "Good news: it already fits". It's handed back untouched, and the page says it couldn't open it and asks you to open it yourself before you send it.
