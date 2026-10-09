@@ -136,7 +136,7 @@ export const busyCopy = {
   // The line under the bar changes as the wait gets longer. Each one is true:
   // the device does the work, and the watchdog stops a stalled job and says so.
   waits: [
-    { after: 0, text: 'Nothing gets uploaded. Your device saves each picture a few ways and keeps the lightest one that still looks right, so a big deck takes a few minutes.' },
+    { after: 0, text: 'Nothing leaves your device. It saves each picture a few ways and keeps the lightest one that still looks right, so a big deck takes a few minutes.' },
     { after: 25_000, text: 'Still going. Some of these photos are enormous, and your device is handling each one personally.' },
     { after: 75_000, text: 'Still at it. Phones take their time with a deck this size. No rush, and nobody else is looking.' },
     { after: 150_000, text: 'A long one. It’s still working, and if it ever gets stuck, we’ll stop and tell you. Stretch your legs. Your deck can’t.' },
@@ -239,7 +239,7 @@ export const curveBalls: Record<CommentaryKey, string[]> = {
     'Framing every slide',
   ],
   any: [
-    'Still not uploading anything',
+    'Going nowhere, on purpose',
     'Making this look easy',
     'Doing the maths twice',
     'Glaring at the 25 MB limit',
