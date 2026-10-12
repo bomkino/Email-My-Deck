@@ -61,6 +61,8 @@ async function look(page, moment) {
         if (!box.width || !box.height || (box.right <= screen + 1 && box.left >= -1)) continue
         // Not on screen: the closed menu, screen-reader text, hidden decoration.
         if (element.closest('[aria-hidden="true"], [inert], .sr-only') || getComputedStyle(element).visibility === 'hidden') continue
+        // Nor what a closed <details> holds. Chromium skips laying it out, so its box can still be the one from a wider screen.
+        if (!element.checkVisibility({ visibilityProperty: true })) continue
         // Cards in a row that scrolls sideways on purpose (the link guide's picks) may run past the edge; the row itself may not.
         let scroller = false
         for (let parent = element.parentElement; parent && !scroller; parent = parent.parentElement) scroller = /^(auto|scroll)$/.test(getComputedStyle(parent).overflowX)
