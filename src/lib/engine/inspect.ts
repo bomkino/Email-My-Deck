@@ -1,3 +1,4 @@
+import { hasCredentials, isCredentials, onlyCredentials } from './credentials'
 import { EngineError, MESSAGES, type ProtectedReason } from './errors'
 import { isDict, isRef, PdfGraph, refNumber, type JsonDict, type JsonValue, type QpdfJsonDocument } from './pdfjson'
 import type { QpdfSession } from './qpdf'
@@ -45,6 +46,8 @@ export type Inspection = {
   encrypted: boolean
   protectedReason: ProtectedReason | null
   restricted: boolean
+  /** The file carries Content Credentials (see `credentials.ts`). They aren't counted as attachments. */
+  credentials: boolean
 }
 
 export const INSPECT_ARGS = [
@@ -152,6 +155,7 @@ export function inspectionFromJson(data: QpdfJsonDocument): Inspection {
     encrypted,
     restricted,
     protectedReason: protectedReason(graph, data),
+    credentials: hasCredentials(graph),
   }
 }
 
@@ -294,18 +298,20 @@ export function pageBox(graph: PdfGraph, page: JsonDict): { width: number; heigh
 function protectedReason(graph: PdfGraph, data: QpdfJsonDocument): ProtectedReason | null {
   const fields = data.acroform?.hasacroform ? data.acroform.fields ?? [] : []
   let signature = fields.some((field) => field.fieldtype === '/Sig')
-  let attachments = Object.keys(data.attachments ?? {}).length > 0
+  // Content Credentials ride in as embedded files too, but they describe the file rather than travel with it.
+  let attachments = Object.values(data.attachments ?? {}).some((file) => !isCredentials(graph, file.filespec))
   let javascript = false
   for (const dict of graph.dictionaries()) {
     if (dict['/ByteRange'] !== undefined && graph.name(dict['/Type']) === '/Sig') signature = true
     if (dict['/Perms'] !== undefined && graph.name(dict['/Type']) === '/Catalog') signature = true
-    if (dict['/EF'] !== undefined || dict['/EmbeddedFiles'] !== undefined) attachments = true
+    if (dict['/EF'] !== undefined && !isCredentials(graph, dict)) attachments = true
+    if (dict['/EmbeddedFiles'] !== undefined && !onlyCredentials(graph, dict['/EmbeddedFiles'])) attachments = true
     if (graph.name(dict['/Subtype']) === '/FileAttachment') attachments = true
     if (dict['/JS'] !== undefined || graph.name(dict['/S']) === '/JavaScript') javascript = true
     if (isDict(dict['/Names']) || isRef(dict['/Names'])) {
       const names = graph.dict(dict['/Names'])
       if (names && names['/JavaScript'] !== undefined) javascript = true
-      if (names && names['/EmbeddedFiles'] !== undefined) attachments = true
+      if (names && names['/EmbeddedFiles'] !== undefined && !onlyCredentials(graph, names['/EmbeddedFiles'])) attachments = true
     }
   }
   if (signature) return 'signature'

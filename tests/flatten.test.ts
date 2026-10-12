@@ -8,7 +8,7 @@ import { clarity, resample } from '../src/lib/engine/perceptual'
 import type { ProgressEvent } from '../src/lib/engine/progress'
 import { QpdfSession } from '../src/lib/engine/qpdf'
 import { getTargetProfile } from '../src/lib/profiles'
-import { nodeQpdf, photoJpeg, qpdfTransform, textDeck } from './helpers/engine'
+import { nodeQpdf, photoJpeg, qpdfTransform, textDeck, withContentCredentials } from './helpers/engine'
 
 describe('choosing a rung per flattened slide', () => {
   // A photo gives up little clarity per byte; small print gives up a lot.
@@ -145,6 +145,13 @@ describe('flattening a deck', () => {
     const outcome = toOutcome(result, input.byteLength, getTargetProfile('strict-20'), 10_000_000)
     expect(outcome).toMatchObject({ fits: true, candidate: { engine: 'flattened', quality: 'strong' }, receipt: { lossless: false, longEdgePx: 2400, flatten: { pages: 3 } } })
     expect(outcome.candidate.notes[0]).toBe('Turned 3 slides into pictures, at least 2400 pixels across.')
+  })
+
+  it('takes on a deck with Content Credentials, which a deck of pictures leaves behind', async () => {
+    const input = await withContentCredentials(await textDeck(3))
+    const result = await flattenDocument(input, 10_000_000, { qpdf: nodeQpdf, rasterizer: stubRasterizer(3, boxes) })
+    expect(result.credentialsRemoved).toBe(true)
+    expect(new TextDecoder('latin1').decode(result.bytes)).not.toContain('C2PA')
   })
 
   it('squeezes the pictures to fit, and reports the lightest slide', async () => {

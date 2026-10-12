@@ -10,4 +10,6 @@ Generated locally with `scripts/generate-corpus.mjs`. These files contain no use
 | email-pressure-test.pdf | Noise images that cannot compress: measured split |
 | design-tool-deck.pdf | Figma and iLovePDF shapes: photos inside nested groups, JPEGs deflated twice, soft masks, lossless gray photos: one file |
 | forms-deck.pdf | The photo deck plus a form field: refused as protected |
+| credentials-deck.pdf | The photo deck with Content Credentials, as InDesign exports them: one file, credentials left out |
+| credentials-pressure-test.pdf | The pressure test with Content Credentials: the phone check's parts, with the note that they were left out |
 | restricted-deck.pdf | The photo deck, opening without a password but forbidding changes: refused as restricted |

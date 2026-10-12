@@ -6,7 +6,7 @@ import type { SplitPlan } from './lib/engine/split'
 import { emailVersionName } from './lib/filename'
 import { CUSTOM_MAX_MB, CUSTOM_MIN_MB, estimatedMessageBytes, getTargetProfile, rawBudgetBytes, TARGET_PROFILES, type TargetProfile, type TargetProfileId } from './lib/profiles'
 import {
-  busyCopy, cantFitCopy, customLimitCopy, errorCopy, errorKindFor, idleCopy, mailboxCopy, mailboxName, pageTooLargeTitle, protectedCopy, readyCopy, splitCopy,
+  busyCopy, cantFitCopy, credentialsCopy, customLimitCopy, errorCopy, errorKindFor, idleCopy, mailboxCopy, mailboxName, pageTooLargeTitle, protectedCopy, readyCopy, splitCopy,
   stageCopy, stageFor, tooBigOnTouch, unsupportedCopy, waitFor, weighInLine, whatFlatteningDid, whatWeDid, type ErrorKind, type Weights,
 } from './ui/copy'
 import { deckName, formatElapsed, formatSize, percentLighter } from './ui/format'
@@ -513,7 +513,7 @@ export default function App() {
       onSplit={split} onFlatten={flatten} onReset={reset}
     />}
     {stage === 'split' && file && <Parts
-      file={file} parts={parts} budget={cantFit?.targetBytes ?? 0} weights={weightsFor(file.size, profileId, profile)} headingRef={headingRef}
+      file={file} parts={parts} budget={cantFit?.targetBytes ?? 0} weights={weightsFor(file.size, profileId, profile)} credentialsRemoved={cantFit?.receipt.credentialsRemoved} headingRef={headingRef}
       onWays={cantFit ? backToWays : undefined} onReset={reset}
     />}
     {/* In <body>, not the tool: an ancestor with a transform (the tool's rise-in) would hold a fixed overlay inside the tool, where it's clipped out of sight. */}
@@ -695,7 +695,7 @@ function Ready({ file, outcome, weights, headingRef, onStricter, onWays, onReset
   const outputName = emailVersionName(file.name)
   const lighter = percentLighter(file.size, outputBytes)
   const flatten = (outcome.receipt as CompressionOutcome['receipt'] & { flatten?: { pages: number; longEdgePx?: number } }).flatten
-  const did = untouched ? [] : flattened ? whatFlatteningDid(flatten, outcome.inspection.pages) : whatWeDid(outcome)
+  const did = untouched ? [] : flattened ? whatFlatteningDid(flatten, outcome.inspection.pages, outcome.receipt.credentialsRemoved) : whatWeDid(outcome)
   const save = () => { download(outcome.candidate.bytes, outputName); setDownloaded(true) }
   return <section className="panel panel--ready" aria-labelledby="emd-ready-title">
     <div className="ready-top">
@@ -719,6 +719,7 @@ function Ready({ file, outcome, weights, headingRef, onStricter, onWays, onReset
           {did.map((line) => <li key={line}><Icon name="check" size={16} />{line}</li>)}
           <li><Icon name="check" size={16} />{readyCopy.sameSlides(outcome.inspection.pages)}</li>
         </ul>
+        {outcome.receipt.credentialsRemoved && <CredentialsExplainer />}
       </div></>}
     <Meter used={outcome.estimatedMessageBytes} limit={weights.limit} label="Room in the email" />
     {weights.conditional && <p className="note note--warn" data-pd-type="body.small">{readyCopy.conditional}</p>}
@@ -822,7 +823,15 @@ function SplitChooser({ outcome, initial, weights, trouble, onSplit }: { outcome
   </div>
 }
 
-function Parts({ file, parts, budget, weights, headingRef, onWays, onReset }: { file: File; parts: SplitPart[]; budget: number; weights: Weights; headingRef: HeadingRef; onWays?: () => void; onReset: () => void }) {
+// The plain-words answer, folded under the line that says they're gone.
+function CredentialsExplainer() {
+  return <details className="eli5">
+    <summary data-pd-type="body.small">{credentialsCopy.question}</summary>
+    <p data-pd-type="body.small">{credentialsCopy.answer}</p>
+  </details>
+}
+
+function Parts({ file, parts, budget, weights, credentialsRemoved, headingRef, onWays, onReset }: { file: File; parts: SplitPart[]; budget: number; weights: Weights; credentialsRemoved?: boolean; headingRef: HeadingRef; onWays?: () => void; onReset: () => void }) {
   const [copied, setCopied] = useState<'idle' | 'done' | 'failed'>('idle')
   const name = deckName(file.name)
   const overBudget = (part: SplitPart) => part.fits === false || (budget > 0 && part.bytes.byteLength > budget)
@@ -833,6 +842,7 @@ function Parts({ file, parts, budget, weights, headingRef, onWays, onReset }: { 
     <p className="eyebrow" data-pd-type="metadata">{splitCopy.eyebrow(parts.length)}</p>
     <h2 id="emd-parts-title" ref={headingRef} tabIndex={-1} data-pd-type="heading.subsection">{splitCopy.title}</h2>
     {!anyOver && <p className="ready-lede" data-pd-type="body.default">{splitCopy.body(parts.length, weights.mailbox)}</p>}
+    {credentialsRemoved && <div className="note note--warn credentials-note"><p data-pd-type="body.small">{credentialsCopy.line}</p><CredentialsExplainer /></div>}
     <ol className="parts">
       {parts.map((part, index) => <li className={`part${overBudget(part) ? ' part--over' : ''}`} key={part.name}>
         <span className="part-number" data-pd-type="data">{String(index + 1).padStart(2, '0')}</span>

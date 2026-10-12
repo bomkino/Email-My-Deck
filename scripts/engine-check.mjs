@@ -26,6 +26,7 @@ const cases = [
   { deck: 'email-pressure-test.pdf', profile: 'strict-20', mode: 'flatten', expect: 'flattened' },
   { deck: 'design-tool-deck.pdf', profile: 'strict-20', mode: 'flatten', expect: 'flattened' },
   { deck: 'forms-deck.pdf', profile: 'common-25', expect: 'error:protected:forms' },
+  { deck: 'credentials-deck.pdf', profile: 'strict-20', expect: 'fits', credentialsRemoved: true },
   { deck: 'restricted-deck.pdf', profile: 'common-25', expect: 'error:restricted' },
 ]
 
@@ -109,6 +110,7 @@ for (const testCase of cases) {
       if (!outcome?.verified || outcome.receipt.checks.join() !== 'page-count,page-size,structure') fail('result was not verified')
       if (!requests.some((url) => /image\.worker-.*\.js$/.test(url))) fail('the image worker pool was not used')
     }
+    if (testCase.credentialsRemoved && !outcome?.receipt?.credentialsRemoved) fail('the receipt does not say the Content Credentials were left out')
     if (kind === 'flattened') {
       if (run.type !== 'compress-result' || outcome?.engine !== 'flattened') fail(`expected a flattened result, got ${run.type} ${outcome?.engine}`)
       if (!outcome?.fits || outcome.bytes > budget) fail(`expected the flattened deck within ${budget} bytes, got ${outcome?.bytes}`)

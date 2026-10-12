@@ -32,8 +32,9 @@ const named = async (deck, name) => {
   await copyFile(resolve(`corpus/${deck}.pdf`), path)
   return path
 }
-const fits = await named('photo-deck', '[Client Name] [Pitch Deck] [Studio] Exploration v1 FINAL final (for the board).pdf')
-const tooBig = await named('email-pressure-test', 'ClientName_PitchDeck_Studio_Exploration_v1_FINAL_final_for_the_board_2026-10-07_email-pressure-test.pdf')
+// Both carry Content Credentials, so the ready receipt and the parts also show the line saying they were left out.
+const fits = await named('credentials-deck', '[Client Name] [Pitch Deck] [Studio] Exploration v1 FINAL final (for the board).pdf')
+const tooBig = await named('credentials-pressure-test', 'ClientName_PitchDeck_Studio_Exploration_v1_FINAL_final_for_the_board_2026-10-07_email-pressure-test.pdf')
 const refused = await named('restricted-deck', 'ClientName_PitchDeck_Studio_Exploration_v1_FINAL_final_for_the_board_locked_by_legal.pdf')
 const notPdf = join(folder, 'ClientName_PitchDeck_Studio_Exploration_v1_FINAL_final_for_the_board_actually_a_text_file.pdf')
 await writeFile(notPdf, 'This is not a PDF.\n'.repeat(200))
@@ -60,6 +61,8 @@ async function look(page, moment) {
         if (!box.width || !box.height || (box.right <= screen + 1 && box.left >= -1)) continue
         // Not on screen: the closed menu, screen-reader text, hidden decoration.
         if (element.closest('[aria-hidden="true"], [inert], .sr-only') || getComputedStyle(element).visibility === 'hidden') continue
+        // Nor what a closed <details> holds. Chromium skips laying it out, so its box can still be the one from a wider screen.
+        if (!element.checkVisibility({ visibilityProperty: true })) continue
         // Cards in a row that scrolls sideways on purpose (the link guide's picks) may run past the edge; the row itself may not.
         let scroller = false
         for (let parent = element.parentElement; parent && !scroller; parent = parent.parentElement) scroller = /^(auto|scroll)$/.test(getComputedStyle(parent).overflowX)
@@ -134,7 +137,11 @@ await stage(page, 'reading', 'compressing')
 await look(page, 'working')
 await stage(page, 'ready')
 await page.waitForTimeout(1200)
+check(/Content Credentials/.test(await page.locator('.receipt-list').innerText()), 'ready: the receipt doesn’t say the Content Credentials were left out')
 await look(page, 'ready')
+await page.locator('.eli5 summary').click()
+check(/wax seal/.test(await page.locator('.eli5').innerText()), 'ready: “What are Content Credentials?” doesn’t open its explainer')
+await look(page, 'ready, Content Credentials explained')
 await page.close()
 
 // A deck that can't fit one email: the three ways, a split, the parts, back
@@ -149,6 +156,8 @@ await stage(page, 'splitting', 'split')
 await look(page, 'splitting')
 await stage(page, 'split')
 await page.waitForTimeout(1200)
+check(/Content Credentials/.test(await page.locator('.panel--split').innerText()), 'the parts: nothing says the Content Credentials were left out')
+await page.locator('.panel--split .eli5 summary').click()
 await look(page, 'the parts')
 await page.getByRole('button', { name: 'Change where it splits' }).click()
 await stage(page, 'cant-fit')

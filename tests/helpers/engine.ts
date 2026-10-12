@@ -2,7 +2,7 @@ import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { deflateSync } from 'node:zlib'
 import jpeg from 'jpeg-js'
-import { PDFDocument, PDFName, PDFString, type PDFRef } from 'pdf-lib'
+import { PDFDocument, PDFName, PDFRawStream, PDFString, type PDFRef } from 'pdf-lib'
 import type { CodecOutput, CodecResult, CodecSource, ImageCodec } from '../../src/lib/engine/codec'
 import { encodeGrayJpeg } from '../../src/lib/engine/grayjpeg'
 import { QpdfSession, type QpdfLoader, type QpdfModuleFactory } from '../../src/lib/engine/qpdf'
@@ -170,6 +170,28 @@ export function addSignatureField(document: PDFDocument): PDFRef {
   document.catalog.set(PDFName.of('AcroForm'), document.context.obj({ Fields: [field], SigFlags: 3 }))
   document.getPage(0).node.set(PDFName.of('Annots'), document.context.obj([field]))
   return field
+}
+
+/**
+ * Add Content Credentials as InDesign does (a C2PA manifest on the catalog's /AF), or as the
+ * C2PA spec asks (also listed as an embedded file), optionally with one more on the first image.
+ */
+export async function withContentCredentials(bytes: Uint8Array, options: { listed?: boolean; onImage?: boolean } = {}): Promise<Uint8Array> {
+  const document = await PDFDocument.load(bytes)
+  const context = document.context
+  const manifest = () => {
+    const file = context.register(context.flateStream(new TextEncoder().encode('a signed C2PA manifest store'), { Type: 'EmbeddedFile', Subtype: 'application/x-c2pa-manifest-store' }))
+    return context.register(context.obj({ Type: 'Filespec', F: PDFString.of('CAI_Attachment_File.c2pa'), UF: PDFString.of('CAI_Attachment_File.c2pa'), AFRelationship: 'C2PA_Manifest', EF: { F: file } }))
+  }
+  const spec = manifest()
+  document.catalog.set(PDFName.of('AF'), context.obj([spec]))
+  if (options.listed) document.catalog.set(PDFName.of('Names'), context.obj({ EmbeddedFiles: { Names: [PDFString.of('CAI_Attachment_File.c2pa'), spec] } }))
+  if (options.onImage) {
+    const image = context.enumerateIndirectObjects().map(([, object]) => object).find((object) => object instanceof PDFRawStream && object.dict.get(PDFName.of('Subtype'))?.toString() === '/Image')
+    if (!(image instanceof PDFRawStream)) throw new Error('No image to credit')
+    image.dict.set(PDFName.of('AF'), context.obj([manifest()]))
+  }
+  return document.save()
 }
 
 /** Run QPDF on `input` (as /work/in.pdf) and return /work/out.pdf. */

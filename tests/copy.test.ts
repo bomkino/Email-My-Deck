@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { busyCopy, cantFitCopy, commentary, curveBalls, dogFact, mailboxName, stageFor, waitFor, whatFlatteningDid, whatWeDid, type Weights } from '../src/ui/copy'
+import { busyCopy, cantFitCopy, commentary, credentialsCopy, curveBalls, dogFact, mailboxName, stageFor, waitFor, whatFlatteningDid, whatWeDid, type Weights } from '../src/ui/copy'
 import { formatSize } from '../src/ui/format'
 
 const MB = 1_000_000
@@ -52,6 +52,19 @@ describe('page copy', () => {
   it('says flattened slides are at least as sharp as the lightest one', () => {
     expect(whatFlatteningDid({ pages: 66, longEdgePx: 1440 }, 66)[0]).toBe('Turned all 66 slides into pictures, at least 1,440 pixels across.')
     expect(whatFlatteningDid({ pages: 1, longEdgePx: 2400 }, 1)[0]).toBe('Turned the slide into a picture, 2,400 pixels across.')
+  })
+
+  it('owns up to leaving out Content Credentials, after whatever else it did', () => {
+    const tidied = whatWeDid({ candidate: { notes: [] }, receipt: { lossless: true, images: { resized: 0, resaved: 0 }, credentialsRemoved: true } })
+    expect(tidied).toEqual(['Tidied the file’s insides. Nothing you can see changed.', credentialsCopy.line])
+    const resized = whatWeDid({ candidate: { notes: [] }, receipt: { lossless: false, longEdgePx: 1920, images: { resized: 2, resaved: 0 }, credentialsRemoved: true } })
+    expect(resized.at(-1)).toBe(credentialsCopy.line)
+    expect(whatFlatteningDid({ pages: 3, longEdgePx: 2400 }, 3, true).at(-1)).toBe(credentialsCopy.line)
+    expect(whatFlatteningDid({ pages: 3, longEdgePx: 2400 }, 3)).not.toContain(credentialsCopy.line)
+    // The explainer says what they are, why a lighter copy can't keep them, and that nothing visible changed.
+    expect(credentialsCopy.answer).toMatch(/who made it/)
+    expect(credentialsCopy.answer).toMatch(/tampered/)
+    expect(credentialsCopy.answer).toMatch(/Nothing you can see is different/)
   })
 
   it('keeps talking through a long wait, with one dog fact in all', () => {

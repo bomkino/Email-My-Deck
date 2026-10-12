@@ -4,6 +4,7 @@ type EmscriptenFS = {
   writeFile(path: string, data: Uint8Array | string, options?: { canOwn?: boolean }): void
   readFile(path: string): Uint8Array
   unlink(path: string): void
+  rename(from: string, to: string): void
   mkdir(path: string): void
   readdir(path: string): string[]
   stat(path: string): { size: number }
@@ -125,6 +126,10 @@ export class QpdfSession {
 
   size(path: string): number {
     return this.module.FS.stat(path).size
+  }
+
+  rename(from: string, to: string): void {
+    this.module.FS.rename(from, to)
   }
 
   remove(path: string): void {
