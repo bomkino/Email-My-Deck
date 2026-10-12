@@ -11,10 +11,11 @@ import { EngineError } from '../src/lib/engine/errors'
 import { encodeGrayJpeg } from '../src/lib/engine/grayjpeg'
 import { readJpegInfo } from '../src/lib/engine/jpeg'
 import type { ProgressEvent } from '../src/lib/engine/progress'
+import { PdfGraph, type QpdfJsonDocument } from '../src/lib/engine/pdfjson'
 import { measureSplitPlan, splitDocument } from '../src/lib/engine/split'
 import { QpdfSession } from '../src/lib/engine/qpdf'
 import { getTargetProfile, rawBudgetBytes } from '../src/lib/profiles'
-import { addJavaScript, addSignatureField, nodeCodec, nodeQpdf, pageCount, photoDeck, photoJpeg, qpdfTransform, textDeck } from './helpers/engine'
+import { addJavaScript, addSignatureField, nodeCodec, nodeQpdf, pageCount, photoDeck, photoJpeg, qpdfTransform, textDeck, withContentCredentials } from './helpers/engine'
 
 function deps(events: ProgressEvent[] = [], log: CodecOutput[][] = []): EngineDeps {
   return { qpdf: nodeQpdf, codec: nodeCodec(log), onProgress: (event) => events.push(event) }
@@ -395,6 +396,13 @@ describe('what the engine refuses, and what it no longer refuses', () => {
     expect(await codeOf(compressDocument(scripted, tooSmall, deps()))).toBe('protected:javascript')
   })
 
+  it('takes an attachments list with nothing in it at its word', async () => {
+    const empty = await textDeck(1, (document) => {
+      document.catalog.set(PDFName.of('Names'), document.context.obj({ EmbeddedFiles: { Names: [] } }))
+    })
+    expect(await codeOf(compressDocument(empty, tooSmall, deps()))).toBeUndefined()
+  })
+
   it('does not mistake words inside page content for features', async () => {
     // The old byte scan refused files whose streams merely contained these names.
     const document = await PDFDocument.create()
@@ -404,6 +412,62 @@ describe('what the engine refuses, and what it no longer refuses', () => {
     const bytes = await document.save({ useObjectStreams: true })
     const result = await compressDocument(bytes, bytes.byteLength + 1, deps())
     expect(result.kind).toBe('original')
+  })
+})
+
+describe('Content Credentials', () => {
+  /** Manifests, /AF entries and listed embedded files left in a PDF. */
+  async function credentialsIn(bytes: Uint8Array): Promise<{ manifests: number; associated: number; listed: number }> {
+    const session = await QpdfSession.create(nodeQpdf)
+    session.writeFile('/work/check.pdf', bytes.slice())
+    const { data } = session.json<QpdfJsonDocument>(['--json=2', '--json-key=attachments', '--json-key=qpdf', '--json-stream-data=none', '/work/check.pdf'])
+    const graph = PdfGraph.fromJson(data!)
+    const dicts = [...graph.dictionaries()]
+    return {
+      manifests: dicts.filter((dict) => dict['/AFRelationship'] === '/C2PA_Manifest').length,
+      associated: dicts.filter((dict) => dict['/AF'] !== undefined).length,
+      listed: Object.keys(data!.attachments ?? {}).length,
+    }
+  }
+
+  it('leaves them out of a lighter copy and says so, wherever they hang', async () => {
+    const input = await withContentCredentials(await photoDeck({ pages: 4, image: [1200, 675], drawn: [240, 135] }), { onImage: true })
+    expect(await credentialsIn(input)).toEqual({ manifests: 2, associated: 2, listed: 0 })
+    const budget = Math.floor(input.byteLength * 0.6)
+    const result = await compressDocument(input.slice(), budget, deps())
+    expect(result.kind).toBe('images')
+    expect(result.bytes.byteLength).toBeLessThanOrEqual(budget)
+    expect(result.credentialsRemoved).toBe(true)
+    expect(await credentialsIn(result.bytes)).toEqual({ manifests: 0, associated: 0, listed: 0 })
+    expect(await pageCount(result.bytes)).toBe(4)
+    const outcome = toOutcome(result, input.byteLength, getTargetProfile('common-25'), budget)
+    expect(outcome.receipt.credentialsRemoved).toBe(true)
+    expect(outcome.candidate.notes.at(-1)).toMatch(/Content Credentials/)
+  })
+
+  it('takes them off a manifest listed as an attached file too, as the C2PA spec asks', async () => {
+    const input = await withContentCredentials(await textDeck(2), { listed: true })
+    expect(await credentialsIn(input)).toEqual({ manifests: 1, associated: 1, listed: 1 })
+    const result = await compressDocument(input, 100, deps())
+    expect(result.kind).toBe('split-needed')
+    expect(result.credentialsRemoved).toBe(true)
+    expect(await credentialsIn(result.bytes)).toEqual({ manifests: 0, associated: 0, listed: 0 })
+  })
+
+  it('hands back a deck that already fits with them, byte for byte', async () => {
+    const input = await withContentCredentials(await textDeck(2))
+    const copy = input.slice()
+    const result = await compressDocument(input, input.byteLength + 1, deps())
+    expect(result.kind).toBe('original')
+    expect(result.bytes).toEqual(copy)
+    expect(result.credentialsRemoved).toBeUndefined()
+  })
+
+  it('still refuses a real attachment that comes with them', async () => {
+    const input = await withContentCredentials(await textDeck(1, async (document) => {
+      await document.attach(new TextEncoder().encode('notes'), 'notes.txt', { mimeType: 'text/plain' })
+    }))
+    expect(await codeOf(compressDocument(input, 100, deps()))).toBe('protected:attachments')
   })
 })
 

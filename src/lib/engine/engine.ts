@@ -1,5 +1,6 @@
 import { deflate, inflate, type ImageCodec, type CodecOutput, type CodecSource } from './codec'
 import { collectFormRefs, entryScales, placementsForPage, roundPaths, untrackedDrawing, type Placement } from './content'
+import { credentialsUpdate } from './credentials'
 import { EngineError, MESSAGES, protectedError } from './errors'
 import { inspectionFromJson, inspectWithQpdf, INSPECT_ARGS, looksLikePdf, type ImageRecord, type Inspection } from './inspect'
 import { readJpegInfo } from './jpeg'
@@ -72,6 +73,8 @@ export type EngineResult = {
   paths?: { drawings: number; savedBytes: number }
   /** For `flattened`: slides turned into pictures, the fewest pixels across any slide kept and its JPEG quality (1–100), and the lowest clarity (0–1) any slide kept. */
   flatten?: { pages: number; longEdgePx: number; jpegQuality: number; clarity: number }
+  /** The original carried Content Credentials, which this rewritten copy leaves out: they sign the original's exact bytes. */
+  credentialsRemoved?: boolean
   elapsedMs: number
   /**
    * Only on an untouched `original`: QPDF couldn't read it, so nothing inside was checked.
@@ -167,17 +170,22 @@ export async function compressDocument(input: Uint8Array, budget: number, deps: 
 
   const session = await QpdfSession.create(deps.qpdf)
   // The engine's in-memory filesystem takes ownership of the bytes; `input` is not used after this.
-  const originalBytes = input.byteLength
   session.writeFile(INPUT, input, true)
-  const inspection = inspectWithQpdf(session, INPUT)
-  progress.update(1)
+  let inspection = inspectWithQpdf(session, INPUT)
 
   if (inspection.encrypted && inspection.restricted) throw new EngineError('restricted', MESSAGES.restricted)
   if (inspection.protectedReason) throw protectedError(inspection.protectedReason)
+  // They vouch for the original's exact bytes, so everything made from here leaves them out.
+  const credentialsRemoved = inspection.credentials
+  if (credentialsRemoved) inspection = removeCredentials(session, INPUT, inspection)
+  // What every rewrite starts from.
+  const originalBytes = session.size(INPUT)
+  progress.update(1)
 
   const keep = (result: Omit<EngineResult, 'session' | 'path'>, path: string): EngineResult => {
-    if (options.keepSession) return { ...result, session, path }
-    return result
+    const made = credentialsRemoved ? { ...result, credentialsRemoved } : result
+    if (options.keepSession) return { ...made, session, path }
+    return made
   }
 
   const eligible = inspection.images.filter((image) => image.kind)
@@ -883,6 +891,24 @@ function imageStats(plans: ImagePlan[], outputs: Map<string, Map<number, StoredO
     else stats.resaved += 1
   }
   return stats
+}
+
+/**
+ * Rewrite the file at `path` in place without its Content Credentials, and
+ * inspect it again (QPDF renumbers objects as it writes). Should any still be
+ * referred to from somewhere unexpected, the file is refused as before.
+ */
+function removeCredentials(session: QpdfSession, path: string, inspection: Inspection): Inspection {
+  const objects = credentialsUpdate(inspection.graph)
+  const update = { qpdf: [{ jsonversion: 2, pushedinheritedpageresources: false, calledgetallpages: false, maxobjectid: 0 }, objects] }
+  session.writeFile('/work/credentials.json', new TextEncoder().encode(JSON.stringify(update)))
+  session.runOk([...idArgs(inspection.encrypted), '--update-from-json=/work/credentials.json', path, '/work/without-credentials.pdf'], undefined, 'engine')
+  session.remove('/work/credentials.json')
+  session.remove(path)
+  session.rename('/work/without-credentials.pdf', path)
+  const cleaned = inspectWithQpdf(session, path)
+  if (cleaned.credentials || cleaned.pageCount !== inspection.pageCount) throw protectedError('attachments')
+  return cleaned
 }
 
 /** Check the candidate kept every page at the same size, and that QPDF finds its structure sound. */

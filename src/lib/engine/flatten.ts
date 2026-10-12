@@ -323,6 +323,8 @@ export async function flattenDocument(input: Uint8Array, budget: number, deps: F
     attempts,
     checks,
     flatten: { pages: pages.length, longEdgePx: lightest.longEdgePx, jpegQuality: Math.round(lightest.jpegQuality * 100), clarity: Math.round(result!.choice.clarity * 1000) / 1000 },
+    // A deck made of pictures starts afresh, so Content Credentials never come along.
+    ...(inspection.credentials ? { credentialsRemoved: true } : {}),
     elapsedMs: now() - started,
   }
 }

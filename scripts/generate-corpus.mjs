@@ -3,7 +3,7 @@ import { deflateSync } from 'node:zlib'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import jpeg from 'jpeg-js'
-import { PDFDocument, PDFName, StandardFonts, rgb } from 'pdf-lib'
+import { PDFDocument, PDFName, PDFString, StandardFonts, rgb } from 'pdf-lib'
 
 const corpusDir = new URL('../corpus/', import.meta.url)
 await mkdir(corpusDir, { recursive: true })
@@ -99,6 +99,15 @@ async function formsDeck(source) {
   return pdf.save({ useObjectStreams: true })
 }
 
+// Content Credentials as InDesign exports them: a C2PA manifest on the catalog's /AF. Not an attachment.
+async function credentialsDeck(source) {
+  const pdf = await PDFDocument.load(source)
+  const file = pdf.context.register(pdf.context.flateStream(new TextEncoder().encode('a signed C2PA manifest store'), { Type: 'EmbeddedFile', Subtype: 'application/x-c2pa-manifest-store' }))
+  const spec = pdf.context.register(pdf.context.obj({ Type: 'Filespec', F: PDFString.of('CAI_Attachment_File.c2pa'), UF: PDFString.of('CAI_Attachment_File.c2pa'), AFRelationship: 'C2PA_Manifest', EF: { F: file } }))
+  pdf.catalog.set(PDFName.of('AF'), pdf.context.obj([spec]))
+  return pdf.save({ useObjectStreams: true })
+}
+
 // Opens without a password but forbids changes: must be refused as "restricted", not "password".
 async function restrictedDeck(source) {
   const require = createRequire(import.meta.url)
@@ -161,6 +170,7 @@ await writeFile(new URL('shared-resources-deck.pdf', corpusDir), await sharedRes
 await writeFile(new URL('email-pressure-test.pdf', corpusDir), await imageDeck(24, 'Email pressure test'))
 await writeFile(new URL('design-tool-deck.pdf', corpusDir), await designToolDeck(6))
 await writeFile(new URL('forms-deck.pdf', corpusDir), await formsDeck(photos))
+await writeFile(new URL('credentials-deck.pdf', corpusDir), await credentialsDeck(photos))
 await writeFile(new URL('restricted-deck.pdf', corpusDir), await restrictedDeck(photos))
 await writeFile(new URL('README.md', corpusDir), `# Synthetic corpus
 
@@ -174,6 +184,7 @@ Generated locally with \`scripts/generate-corpus.mjs\`. These files contain no u
 | email-pressure-test.pdf | Noise images that cannot compress: measured split |
 | design-tool-deck.pdf | Figma and iLovePDF shapes: photos inside nested groups, JPEGs deflated twice, soft masks, lossless gray photos: one file |
 | forms-deck.pdf | The photo deck plus a form field: refused as protected |
+| credentials-deck.pdf | The photo deck with Content Credentials, as InDesign exports them: one file, credentials left out |
 | restricted-deck.pdf | The photo deck, opening without a password but forbidding changes: refused as restricted |
 `)
 

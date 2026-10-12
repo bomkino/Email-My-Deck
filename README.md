@@ -97,6 +97,7 @@ Document bytes are kept in memory only. They are not written to localStorage, In
 ## Current limitations
 
 - Password-protected or permission-restricted PDFs, and PDFs containing forms, signatures, attachments, or scripts, are refused rather than silently rewritten. Export a flattened copy first.
+- Content Credentials (C2PA manifests, which InDesign adds on export) aren't counted as attachments. They sign the original's exact bytes, so no rewritten copy can keep them: the engine leaves them out of anything it rewrites and sets `credentialsRemoved`, and the page says so. An original that already fits keeps them.
 - The page accepts PDFs up to 200 MiB (about 210 MB), or 80 MiB (about 84 MB) on devices reporting 2 GB of memory or less. Larger PDFs need splitting in the user’s PDF application first.
 - Compression is tuned for presentation decks, not archival PDF optimization. Visual differences can occur in raster images; text and page geometry are checked.
 - CMYK, indexed and other colour spaces, 1-bit images and JPEG 2000 are left exactly as they are, as are vector drawings (Figma's outlined text can be several MB of a deck).

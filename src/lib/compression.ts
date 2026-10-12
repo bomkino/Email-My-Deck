@@ -26,6 +26,8 @@ export type CompressionReceipt = {
   paths?: { drawings: number; savedBytes: number }
   /** For a flattened deck: slides turned into pictures, and the fewest pixels across any slide kept. */
   flatten?: { pages: number; longEdgePx: number; jpegQuality: number; clarity: number }
+  /** The original's Content Credentials were left out: they sign its exact bytes, so no rewritten copy can keep them. */
+  credentialsRemoved?: boolean
   /** What was verified on the result: 'unchanged' | 'page-count' | 'page-size' | 'structure'. */
   checks: string[]
   attempts: Attempt[]
@@ -56,8 +58,14 @@ function plural(count: number, word: string): string {
   return `${count} ${word}${count === 1 ? '' : 's'}`
 }
 
-export function describeResult(result: Pick<EngineResult, 'kind' | 'images' | 'rung' | 'paths' | 'flatten'>): string[] {
+export function describeResult(result: Pick<EngineResult, 'kind' | 'images' | 'rung' | 'paths' | 'flatten' | 'credentialsRemoved'>): string[] {
   if (result.kind === 'original') return ['Your original already fits. Nothing was changed.']
+  const notes = whatChanged(result)
+  if (result.credentialsRemoved) notes.push('Left out the Content Credentials, which sign the original’s exact bytes. The original keeps them.')
+  return notes
+}
+
+function whatChanged(result: Pick<EngineResult, 'kind' | 'images' | 'rung' | 'paths' | 'flatten'>): string[] {
   if (result.kind === 'flattened') {
     const slides = result.flatten?.pages ?? 0
     return [
@@ -100,6 +108,7 @@ export function toOutcome(result: EngineResult, originalBytes: number, profile: 
       lossless: !flattened && !rewroteImages && !result.paths,
       paths: result.paths,
       flatten: result.flatten,
+      credentialsRemoved: result.credentialsRemoved,
       checks: result.checks,
       attempts: result.attempts,
     },

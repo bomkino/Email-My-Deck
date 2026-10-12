@@ -301,12 +301,21 @@ const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : 
 
 type ReceiptLike = {
   candidate: { notes: string[] }
-  receipt?: { lossless: boolean; longEdgePx?: number; images: { resized: number; resaved: number; untouched?: number }; paths?: { drawings: number } }
+  receipt?: { lossless: boolean; longEdgePx?: number; images: { resized: number; resaved: number; untouched?: number }; paths?: { drawings: number }; credentialsRemoved?: boolean }
 }
+
+// Said wherever a rewritten copy is handed over, so nobody finds out later.
+export const credentialsNote = 'Left out the Content Credentials. They vouch for your original byte for byte, so no lighter copy can keep them. Your original still has them.'
 
 // The ready screen's "what we did" lines, from what the engine measured.
 export function whatWeDid({ candidate, receipt }: ReceiptLike): string[] {
   if (!receipt) return candidate.notes
+  const lines = linesFor(receipt)
+  if (receipt.credentialsRemoved) lines.push(credentialsNote)
+  return lines
+}
+
+function linesFor(receipt: NonNullable<ReceiptLike['receipt']>): string[] {
   if (receipt.lossless) return ['Tidied the file’s insides. Nothing you can see changed.']
   const { resized, resaved } = receipt.images
   const lines: string[] = []
@@ -319,13 +328,14 @@ export function whatWeDid({ candidate, receipt }: ReceiptLike): string[] {
 }
 
 // The receipt of a flattened deck: what it cost, said as plainly as what it saved.
-export function whatFlatteningDid(flatten: { pages: number; longEdgePx?: number } | undefined, pages: number): string[] {
+export function whatFlatteningDid(flatten: { pages: number; longEdgePx?: number } | undefined, pages: number, credentialsRemoved = false): string[] {
   const slides = flatten?.pages ?? pages
   // longEdgePx is the lightest slide's; with more than one, most are sharper.
   const across = flatten?.longEdgePx ? `, ${slides === 1 ? '' : 'at least '}${flatten.longEdgePx.toLocaleString('en')} pixels across` : ''
   return [
     `Turned ${slides === 1 ? 'the slide into a picture' : `all ${slides} slides into pictures`}${across}.`,
     'Text can’t be selected or searched now, and links won’t click.',
+    ...(credentialsRemoved ? [credentialsNote] : []),
   ]
 }
 

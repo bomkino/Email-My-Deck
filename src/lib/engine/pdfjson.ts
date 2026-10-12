@@ -31,7 +31,7 @@ export type QpdfJsonDocument = {
     hasacroform: boolean
     fields: Array<{ fieldtype?: string | null; value?: JsonValue; object?: string }>
   }
-  attachments?: Record<string, unknown>
+  attachments?: Record<string, { filespec?: string }>
   qpdf?: [{ jsonversion: number; maxobjectid: number }, Record<string, QpdfObjectEntry>]
 }
 
