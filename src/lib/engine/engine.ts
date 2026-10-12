@@ -907,7 +907,8 @@ function removeCredentials(session: QpdfSession, path: string, inspection: Inspe
   session.remove(path)
   session.rename('/work/without-credentials.pdf', path)
   const cleaned = inspectWithQpdf(session, path)
-  if (cleaned.credentials || cleaned.pageCount !== inspection.pageCount) throw protectedError('attachments')
+  if (cleaned.pageCount !== inspection.pageCount) throw new EngineError('engine', MESSAGES.engine)
+  if (cleaned.credentials) throw protectedError('attachments')
   return cleaned
 }
 

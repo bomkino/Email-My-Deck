@@ -397,6 +397,14 @@ body.mobile-menu-open { overflow: hidden; }
 .receipt-list { padding: 0; list-style: none; display: grid; gap: 8px; }
 .receipt-list li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 8px; align-items: start; }
 .receipt-list svg { margin-top: .3em; color: var(--mint-ink); }
+.eli5 summary { min-height: 44px; display: inline-flex; align-items: center; gap: 10px; list-style: none; cursor: pointer; text-decoration: underline; text-decoration-color: var(--rule-strong); text-underline-offset: 4px; }
+.eli5 summary::-webkit-details-marker { display: none; }
+.eli5 summary::after { content: ""; flex: none; width: 11px; height: 11px; background: linear-gradient(currentColor, currentColor) center / 100% 1.5px no-repeat, linear-gradient(currentColor, currentColor) center / 1.5px 100% no-repeat; transition: transform 280ms var(--ease); }
+.eli5[open] summary::after { transform: rotate(45deg); }
+.eli5 > p { max-width: 62ch; color: var(--muted); }
+.eli5[open] > p { animation: rise-in 360ms var(--ease) both; }
+.credentials-note { display: grid; gap: 2px; }
+@media (hover: hover) { .eli5 summary:hover { text-decoration-color: currentColor; } }
 
 .meter { display: grid; gap: 8px; }
 /* On a narrow screen the size drops under the label rather than breaking in two. */

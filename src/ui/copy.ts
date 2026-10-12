@@ -304,14 +304,18 @@ type ReceiptLike = {
   receipt?: { lossless: boolean; longEdgePx?: number; images: { resized: number; resaved: number; untouched?: number }; paths?: { drawings: number }; credentialsRemoved?: boolean }
 }
 
-// Said wherever a rewritten copy is handed over, so nobody finds out later.
-export const credentialsNote = 'Left out the Content Credentials. They vouch for your original byte for byte, so no lighter copy can keep them. Your original still has them.'
+// Said wherever a rewritten copy is handed over, with an explainer a five-year-old could follow, so nobody finds out later.
+export const credentialsCopy = {
+  line: 'Took the Content Credentials off this copy. Your original still has them.',
+  question: 'What are Content Credentials?',
+  answer: 'A wax seal for files. The app that made your PDF pressed one in: a signed note saying who made it, with what and when. The seal only fits that exact file, so any change, even lighter photos, would leave it looking broken, as if someone had tampered with your deck. So the copy goes without one. Nothing you can see is different, and your original keeps its seal.',
+}
 
 // The ready screen's "what we did" lines, from what the engine measured.
 export function whatWeDid({ candidate, receipt }: ReceiptLike): string[] {
   if (!receipt) return candidate.notes
   const lines = linesFor(receipt)
-  if (receipt.credentialsRemoved) lines.push(credentialsNote)
+  if (receipt.credentialsRemoved) lines.push(credentialsCopy.line)
   return lines
 }
 
@@ -335,7 +339,7 @@ export function whatFlatteningDid(flatten: { pages: number; longEdgePx?: number 
   return [
     `Turned ${slides === 1 ? 'the slide into a picture' : `all ${slides} slides into pictures`}${across}.`,
     'Text can’t be selected or searched now, and links won’t click.',
-    ...(credentialsRemoved ? [credentialsNote] : []),
+    ...(credentialsRemoved ? [credentialsCopy.line] : []),
   ]
 }
 

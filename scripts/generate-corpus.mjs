@@ -167,10 +167,12 @@ const photos = await photoDeck(10, 'Photo deck')
 await writeFile(new URL('vector-deck.pdf', corpusDir), await vectorDeck())
 await writeFile(new URL('photo-deck.pdf', corpusDir), photos)
 await writeFile(new URL('shared-resources-deck.pdf', corpusDir), await sharedResourcesDeck(12))
-await writeFile(new URL('email-pressure-test.pdf', corpusDir), await imageDeck(24, 'Email pressure test'))
+const pressure = await imageDeck(24, 'Email pressure test')
+await writeFile(new URL('email-pressure-test.pdf', corpusDir), pressure)
 await writeFile(new URL('design-tool-deck.pdf', corpusDir), await designToolDeck(6))
 await writeFile(new URL('forms-deck.pdf', corpusDir), await formsDeck(photos))
 await writeFile(new URL('credentials-deck.pdf', corpusDir), await credentialsDeck(photos))
+await writeFile(new URL('credentials-pressure-test.pdf', corpusDir), await credentialsDeck(pressure))
 await writeFile(new URL('restricted-deck.pdf', corpusDir), await restrictedDeck(photos))
 await writeFile(new URL('README.md', corpusDir), `# Synthetic corpus
 
@@ -185,6 +187,7 @@ Generated locally with \`scripts/generate-corpus.mjs\`. These files contain no u
 | design-tool-deck.pdf | Figma and iLovePDF shapes: photos inside nested groups, JPEGs deflated twice, soft masks, lossless gray photos: one file |
 | forms-deck.pdf | The photo deck plus a form field: refused as protected |
 | credentials-deck.pdf | The photo deck with Content Credentials, as InDesign exports them: one file, credentials left out |
+| credentials-pressure-test.pdf | The pressure test with Content Credentials: the phone check's parts, with the note that they were left out |
 | restricted-deck.pdf | The photo deck, opening without a password but forbidding changes: refused as restricted |
 `)
 
