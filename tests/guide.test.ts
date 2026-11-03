@@ -19,15 +19,30 @@ const OWN_DOMAINS: Record<string, string[]> = {
   papermark: ['papermark.com', 'papermark.io'],
   wormhole: ['wormhole.app'],
   'tresorit-send': ['tresorit.com'],
+  filemail: ['filemail.com'],
 }
 
-const LEFT_OUT_DOMAINS: Record<string, string> = { Smash: 'fromsmash.com', Filemail: 'filemail.com', Wormhole: 'wormhole.app', MEGA: 'mega.io', DocSend: 'dropbox.com' }
+const LEFT_OUT_DOMAINS: Record<string, string> = { Smash: 'fromsmash.com', Wormhole: 'wormhole.app', MEGA: 'mega.io', DocSend: 'dropbox.com' }
 
 const registrable = (host: string) => host.split('.').slice(-2).join('.')
 
 describe('send-a-link guide data', () => {
   it('records when it was checked', () => {
     expect(CHECKED).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  })
+
+  it('dates a service checked on its own, never before the rest', () => {
+    for (const service of SERVICES) {
+      if (!service.checked) continue
+      expect(service.checked.date, service.id).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+      expect(service.checked.date > CHECKED, service.id).toBe(true)
+      expect(new Date(`${service.checked.date}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }), service.id).toBe(service.checked.text)
+    }
+  })
+
+  it('lists a service once: in the guide or among the ones we also checked', () => {
+    const names = SERVICES.map((service) => service.name)
+    for (const item of LEFT_OUT) expect(names, item.name).not.toContain(item.name)
   })
 
   it('cites only each service’s own site, over https', () => {

@@ -39,7 +39,7 @@ function row(service: Service, rank: number): string {
       <div class="svc-how-body">
         <ol class="svc-steps" data-pd-type="body.default">${service.how.map((step) => `<li>${inline(step)}</li>`).join('')}</ol>
         ${service.watch.length ? `<div class="svc-watch"><p data-pd-type="metadata">${escape(guideCopy.watchTitle)}</p><ul data-pd-type="body.small">${service.watch.map((item) => `<li>${inline(item)}</li>`).join('')}</ul></div>` : ''}
-        <p class="svc-sources" data-pd-type="body.small">${escape(guideCopy.checkedOn(CHECKED_TEXT))} ${service.sources.map((source) => external(source.url, source.label)).join(', ')}.</p>
+        <p class="svc-sources" data-pd-type="body.small">${escape(guideCopy.checkedOn(service.checked?.text ?? CHECKED_TEXT))} ${service.sources.map((source) => external(source.url, source.label)).join(', ')}.</p>
         ${external(service.url, guideCopy.goTo(service.name), 'button button--small svc-go')}
       </div>
     </details>
@@ -120,7 +120,7 @@ ${SERVICES.map((service, index) => row(service, index + 1)).join('\n')}
   </div>
 
   <p class="send-leftout" data-pd-type="body.small">${escape(copy.leftOut)} ${LEFT_OUT.map((item, index) => `${index === LEFT_OUT.length - 1 ? 'and ' : ''}${external(item.url, item.name)}, which ${escape(item.why)}`).join('; ')}.</p>
-  <p class="send-fineprint" data-pd-type="body.small">${inline(copy.fineprint(CHECKED_TEXT))} <a href="mailto:hello@pitch.dog?subject=Email%20My%20Deck%20link%20guide">${escape(copy.fineprintLink)}</a></p>
+  <p class="send-fineprint" data-pd-type="body.small">${inline(copy.fineprint(CHECKED_TEXT, SERVICES.filter((service) => service.checked).map((service) => copy.checkedLater(service.name, service.checked!.text))))} <a href="mailto:hello@pitch.dog?subject=Email%20My%20Deck%20link%20guide">${escape(copy.fineprintLink)}</a></p>
   <button class="text-button send-fold" type="button" aria-controls="send-more" data-send-fold hidden data-pd-type="body.small">${escape(copy.fold)}</button>
   </div>
 </section>`

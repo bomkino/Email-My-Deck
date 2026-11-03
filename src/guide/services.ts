@@ -2,7 +2,8 @@
 //
 // Every limit here was read on the service's own site on CHECKED, and each
 // service lists the pages it came from. Free plans change often: before
-// changing a fact, re-read its source, then update CHECKED.
+// changing a fact, re-read its source, then update CHECKED. A service
+// re-checked on its own carries its own `checked` date instead.
 //
 // The order of SERVICES is our order for a pitch deck: what the reader sees
 // when they click comes first, then how long the link lasts.
@@ -234,6 +235,38 @@ export const SERVICES: Service[] = [
     ],
   },
   {
+    id: 'filemail',
+    name: 'Filemail',
+    url: 'https://www.filemail.com/',
+    checked: { date: '2026-11-03', text: '3 November 2026' },
+    line: 'No account, no ads and 5 GB a transfer, with a responsive team behind it. Links last 7 days.',
+    facts: {
+      looks: no('A download page'),
+      lasts: no('7 days'),
+      'no-signup': yes('None'),
+      private: no(),
+      opened: no(),
+      huge: no('5 GB a transfer'),
+    },
+    how: [
+      'At **filemail.com**, choose **Send as link** and add your deck. You don’t need an account.',
+      'Click **Send**. Once it’s uploaded, copy the link into your email.',
+      'Mention in your email that the link works for 7 days.',
+    ],
+    watch: [
+      'Filemail tells us free transfers have no daily cap.',
+      'Filemail also tells us your reader can preview a PDF in the browser before downloading it. Open the link in a private window to see it as they will.',
+      'Passwords are for paid plans only.',
+      'A free Filemail account adds download tracking, but you can send without one.',
+    ],
+    sources: [
+      { label: 'the free service', url: 'https://support.filemail.com/en/articles/4103694-free-file-sharing-service' },
+      { label: 'sharing for free', url: 'https://www.filemail.com/file-sharing/share-files-online-free' },
+      { label: 'the free account', url: 'https://www.filemail.com/plans/basic' },
+      { label: 'passwords', url: 'https://support.filemail.com/en/articles/354401-password-protect-download' },
+    ],
+  },
+  {
     id: 'tresorit-send',
     name: 'Tresorit Send',
     url: 'https://send.tresorit.com/',
@@ -334,7 +367,6 @@ export const PICKS: Pick[] = [
 /** Checked too, and left off the list for decks. */
 export const LEFT_OUT: { name: string; why: string; url: string }[] = [
   { name: 'Smash', why: 'doesn’t preview PDFs', url: 'https://fromsmash.com/help/articles/13230436-what-file-type-can-i-preview-before-downloading' },
-  { name: 'Filemail', why: 'allows two free transfers a day', url: 'https://support.filemail.com/en/articles/4103694-free-file-sharing-service' },
   { name: 'Wormhole', why: 'deletes files after 24 hours', url: 'https://wormhole.app/faq' },
   { name: 'MEGA', why: 'keeps passwords and end dates for paid plans', url: 'https://help.mega.io/security/data-protection/make-links-more-secure' },
   { name: 'DocSend', why: 'adds its own sign-up page to the end of your deck once the trial ends', url: 'https://help.dropbox.com/plans/dropbox-docsend-limited-trial' },
