@@ -35,6 +35,7 @@ export const guideCopy = {
   howSummary: (name: string) => `How to send a deck with ${name}`,
   watchTitle: 'Worth knowing',
   checkedOn: (date: string) => `Checked on ${date}:`,
+  checkedLater: (name: string, date: string) => `${name}’s on ${date}`,
   goTo: (name: string) => `Go to ${name}`,
   badgeOurs: 'Our pick',
   badgeBest: 'Best match',
@@ -51,6 +52,6 @@ export const guideCopy = {
     { title: 'Save the extra locks for decks that need them.', body: 'Passwords, expiry dates and view-only links each add a step for your reader. Use them when the deck is confidential, and send any password in a separate message.' },
   ],
   leftOut: 'We also checked',
-  fineprint: (date: string) => `We checked every limit here on each service’s own site on ${date}, and each one lists its sources. Free plans change. Nobody paid to be on this list, and none of these links earn us anything.`,
+  fineprint: (date: string, later: string[] = []) => `We checked every limit here on each service’s own site on ${date}${later.length ? ` (${list(later)})` : ''}, and each one lists its sources. Free plans change. Nobody paid to be on this list, and none of these links earn us anything.`,
   fineprintLink: 'Spotted something out of date? Tell us.',
 }

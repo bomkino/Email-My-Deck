@@ -24,6 +24,8 @@ export type Service = {
   watch: string[]
   /** Every limit above traces to one of these, checked on the date in services.ts. */
   sources: Source[]
+  /** When this service was checked, if later than CHECKED in services.ts. */
+  checked?: { date: string; text: string }
 }
 
 /** A recommendation for one need, or 'all' for our pick overall. */

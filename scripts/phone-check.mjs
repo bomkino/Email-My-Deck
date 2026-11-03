@@ -116,10 +116,18 @@ for (const width of widths) {
     return Math.abs(dot.nextElementSibling.getBoundingClientRect().top - dot.getBoundingClientRect().top) > 4
   })
   check(!hanging, `the line above the headline, ${width} px: a dot is left hanging at the end of a line`)
-  await page.locator('#mobile-menu-toggle').click()
+  // On pitch.dog the page wears the site-wide nav (pd-nav), whose menu is a sheet with its own
+  // close button and theme switch. The standalone build keeps the page's own menu.
+  const siteNav = await page.locator('.pdn-menu-btn').count() > 0
+  const menu = siteNav
+    ? { open: '.pdn-menu-btn', close: '.pdn-close', theme: '.pdn-seg' }
+    : { open: '#mobile-menu-toggle', close: '#mobile-menu-toggle', theme: '.theme-control' }
+  await page.locator(menu.open).click()
   await page.waitForTimeout(700)
-  check(await onTop(page, '#mobile-menu-toggle'), `the open menu, ${width} px: the menu covers its own close button`)
-  check(await onTop(page, '.theme-control'), `the open menu, ${width} px: the menu covers the theme button`)
+  check(await onTop(page, menu.close), `the open menu, ${width} px: the menu covers its own close button`)
+  // The sheet's theme switch sits at the foot of a list that scrolls on short screens.
+  await page.locator(menu.theme).scrollIntoViewIfNeeded()
+  check(await onTop(page, menu.theme), `the open menu, ${width} px: the menu covers the theme button`)
   await page.keyboard.press('Escape')
   await page.waitForTimeout(700)
 }
